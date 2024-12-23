@@ -1,6 +1,9 @@
 mod compose;
+mod compose_health;
+mod compose_resources;
 mod dockerfile;
 mod fixtures;
+mod management;
 
 use std::path::PathBuf;
 

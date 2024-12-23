@@ -2,8 +2,9 @@ use bollard::Docker;
 
 use crate::error::DockerError;
 
-mod compose;
-mod dockerfile;
+pub mod compose;
+pub mod dockerfile;
+pub mod management;
 
 pub struct DockerBuilder {
     client: Docker,

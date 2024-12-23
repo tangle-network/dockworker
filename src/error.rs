@@ -10,4 +10,12 @@ pub enum DockerError {
     DockerfileError(String),
     #[error("Docker API error: {0}")]
     BollardError(#[from] bollard::errors::Error),
+    #[error("Invalid IPAM configuration")]
+    InvalidIpamConfig,
+    #[error("Container {0} is not running")]
+    ContainerNotRunning(String),
+    #[error("Network creation failed: {0}")]
+    NetworkCreationError(String),
+    #[error("Invalid resource limit: {0}")]
+    InvalidResourceLimit(String),
 }

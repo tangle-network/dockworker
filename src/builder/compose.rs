@@ -1,13 +1,14 @@
 use bollard::container::{Config, CreateContainerOptions, StartContainerOptions};
 use bollard::image::BuildImageOptions;
 use bollard::network::CreateNetworkOptions;
-use bollard::secret::{HostConfig, PortBinding};
+use bollard::secret::{HealthConfig, HostConfig, PortBinding};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::fs;
 
 use crate::ServiceConfig;
+use crate::config::compose::HealthCheck;
 use crate::{config::compose::ComposeConfig, error::DockerError, parser::compose::ComposeParser};
 
 use super::DockerBuilder;
@@ -49,6 +50,50 @@ impl DockerBuilder {
         }
 
         Ok(container_ids)
+    }
+
+    fn create_host_config(
+        &self,
+        service: &ServiceConfig,
+        network_name: &str,
+    ) -> Result<HostConfig, DockerError> {
+        let mut host_config = HostConfig {
+            network_mode: Some(network_name.to_string()),
+            binds: service.volumes.clone(),
+            ..Default::default()
+        };
+
+        // Add resource limits if specified
+        if let Some(resources) = &service.resources {
+            host_config.memory = resources
+                .memory_limit
+                .as_ref()
+                .and_then(|m| parse_memory_string(m).ok());
+            host_config.memory_swap = resources
+                .memory_swap
+                .as_ref()
+                .and_then(|m| parse_memory_string(m).ok());
+            host_config.memory_reservation = resources
+                .memory_reservation
+                .as_ref()
+                .and_then(|m| parse_memory_string(m).ok());
+            host_config.cpu_shares = resources.cpus_shares;
+            host_config.cpuset_cpus = resources.cpuset_cpus.clone();
+            host_config.nano_cpus = resources.cpu_limit.map(|c| (c * 1e9) as i64);
+        }
+
+        Ok(host_config)
+    }
+
+    fn create_health_config(health: &HealthCheck) -> HealthConfig {
+        HealthConfig {
+            test: Some(health.test.clone()),
+            interval: health.interval.clone(),
+            timeout: health.timeout.clone(),
+            start_period: health.start_period.clone(),
+            retries: health.retries,
+            ..Default::default()
+        }
     }
 
     async fn deploy_service(
@@ -107,19 +152,20 @@ impl DockerBuilder {
             }
         }
 
-        // Create container configuration
+        let host_config = self.create_host_config(service_config, network_name)?;
+        let health_config = service_config
+            .healthcheck
+            .as_ref()
+            .map(Self::create_health_config);
+
         let container_config = Config {
             image: Some(image),
             env: service_config
                 .environment
                 .as_ref()
                 .map(|env| env.iter().map(|(k, v)| format!("{}={}", k, v)).collect()),
-            host_config: Some(HostConfig {
-                port_bindings: Some(port_bindings),
-                network_mode: Some(network_name.to_string()),
-                binds: service_config.volumes.clone(),
-                ..Default::default()
-            }),
+            host_config: Some(host_config),
+            healthcheck: health_config,
             ..Default::default()
         };
 
@@ -136,5 +182,24 @@ impl DockerBuilder {
             .map_err(DockerError::BollardError)?;
 
         Ok(container_info.id)
+    }
+}
+
+// Helper function to parse memory strings like "1G", "512M" into bytes
+pub fn parse_memory_string(memory: &str) -> Result<i64, DockerError> {
+    let len = memory.len();
+    let (num, unit) = memory.split_at(len - 1);
+    let base = num.parse::<i64>().map_err(|_| {
+        DockerError::InvalidResourceLimit(format!("Invalid memory value: {}", memory))
+    })?;
+
+    match unit.to_uppercase().as_str() {
+        "K" => Ok(base * 1024),
+        "M" => Ok(base * 1024 * 1024),
+        "G" => Ok(base * 1024 * 1024 * 1024),
+        _ => Err(DockerError::InvalidResourceLimit(format!(
+            "Invalid memory unit: {}",
+            unit
+        ))),
     }
 }

@@ -1,5 +1,8 @@
-use bollard::container::ListContainersOptions;
-use futures_util::TryStreamExt;
+use crate::{DockerError, tests::dockerfile::is_docker_running};
+use bollard::{
+    container::ListContainersOptions,
+    secret::{Ipam, IpamConfig},
+};
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 
@@ -79,29 +82,46 @@ async fn test_reth_archive_compose_parsing() {
 
 #[tokio::test]
 async fn test_compose_deployment() {
+    if !is_docker_running() {
+        println!("Skipping test: Docker is not running");
+        return;
+    }
+
     let builder = DockerBuilder::new().unwrap();
 
-    // Pull the alpine image first
+    // Create a unique network name for this test
+    let network_name = format!("test-network-{}", uuid::Uuid::new_v4());
+
+    // Create network
     builder
         .get_client()
-        .create_image(
-            Some(bollard::image::CreateImageOptions {
-                from_image: "alpine",
-                tag: "latest",
-                ..Default::default()
-            }),
-            None,
-            None,
-        )
-        .try_collect::<Vec<_>>()
+        .create_network(bollard::network::CreateNetworkOptions {
+            name: network_name.as_str(),
+            driver: "bridge",
+            check_duplicate: true,
+            internal: false,
+            attachable: true,
+            ingress: false,
+            ipam: Ipam {
+                driver: Some("default".to_string()),
+                config: Some(vec![IpamConfig {
+                    subnet: Some("172.30.0.0/16".to_string()),
+                    gateway: Some("172.30.0.1".to_string()),
+                    ip_range: None,
+                    auxiliary_addresses: None,
+                }]),
+                options: None,
+            },
+            ..Default::default()
+        })
         .await
+        .map_err(|e| DockerError::NetworkCreationError(e.to_string()))
         .unwrap();
 
     // Create a simple test compose config
     let mut services = HashMap::new();
     services.insert("test-service".to_string(), ServiceConfig {
         image: Some("alpine:latest".to_string()),
-        build: None,
         ports: Some(vec!["8080:80".to_string()]),
         environment: Some({
             let mut env = HashMap::new();
@@ -109,6 +129,8 @@ async fn test_compose_deployment() {
             env
         }),
         volumes: None,
+        networks: Some(vec![network_name.clone()]),
+        ..ServiceConfig::default()
     });
 
     let config = ComposeConfig {
@@ -137,7 +159,7 @@ async fn test_compose_deployment() {
         assert_eq!(containers.len(), 1);
         assert_eq!(containers[0].id.as_ref().unwrap(), &container_id);
 
-        // Clean up
+        // Clean up container
         builder
             .get_client()
             .remove_container(
@@ -150,6 +172,13 @@ async fn test_compose_deployment() {
             .await
             .unwrap();
     }
+
+    // Clean up network
+    builder
+        .get_client()
+        .remove_network(&network_name)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -167,6 +196,11 @@ async fn test_compose_with_build() {
         ports: None,
         environment: None,
         volumes: None,
+        networks: None,
+        resources: None,
+        depends_on: None,
+        healthcheck: None,
+        restart: None,
     });
 
     let config = ComposeConfig {
