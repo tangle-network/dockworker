@@ -1,0 +1,22 @@
+[package]
+name = "docker-yaml-to-bollard"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bollard = "0.17"
+futures-util = "0.3.31"
+serde = { version = "1.0.216", features = ["derive"] }
+serde_yaml = "0.9.34"
+tempfile = "3.14.0"
+thiserror = "2.0.9"
+tokio = { version = "1.42.0", features = ["full"] }
+uuid = { version = "1.11.0", features = ["v4"] }
+tar = "0.4"
+
+[dev-dependencies]
+async-trait = "0.1.83"
+pretty_assertions = "1.4.1"
+testcontainers = "0.23.1"
+tokio-test = "0.4.4"
+

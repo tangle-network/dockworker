@@ -1,0 +1,53 @@
+version: "2"
+
+services:
+  reth:
+    image: ghcr.io/paradigmxyz/reth:latest
+    container_name: reth
+    restart: unless-stopped
+    #network_mode: host <----- might be necessary for Mac / Windows
+    ports:
+      - "8543:8543"
+      - "8544:8544"
+      - "30304:30304/tcp"
+      - "30304:30304/udp"
+    volumes:
+      - reth_data:/data
+      - reth_jwt:/jwt:ro
+    command:
+      - node
+      - --chain=mainnet
+      - --datadir=/data
+      - --authrpc.jwtsecret=/jwt/jwt.hex
+      - --authrpc.addr=0.0.0.0
+      - --authrpc.port=8551
+      - --http
+      - --http.api=debug,eth,net,trace,txpool,web3,rpc,reth,ots
+      - --http.addr=0.0.0.0
+      - --http.port=8543
+      - --http.corsdomain="*"
+      - --ws
+      - --ws.api=debug,eth,net,trace,txpool,web3,rpc,reth,ots
+      - --ws.addr=0.0.0.0
+      - --ws.port=8544
+      - --ws.origins="*"
+
+  nimbus:
+    image: statusim/nimbus-eth2:multiarch-latest
+    container_name: nimbus
+    restart: unless-stopped
+    ports:
+      - "9001:9001/tcp"
+      - "9001:9001/udp"
+    volumes:
+      - nimbus_data:/data
+      - reth_jwt:/jwt/reth:ro
+    command:
+      - --network=mainnet
+      - --el=http://reth:8551#jwt-secret-file=/jwt/reth/jwt.hex
+      - --enr-auto-update:true
+
+volumes:
+  reth_data:
+  reth_jwt:
+  nimbus_data:
