@@ -1,4 +1,4 @@
-use super::dockerfile::is_docker_running;
+use super::docker_file::is_docker_running;
 use crate::{
     DockerBuilder,
     config::compose::{ComposeConfig, HealthCheck, ServiceConfig},

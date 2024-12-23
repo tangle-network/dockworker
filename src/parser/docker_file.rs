@@ -1,5 +1,5 @@
 use crate::{
-    config::dockerfile::{DockerCommand, DockerfileConfig},
+    config::docker_file::{DockerCommand, DockerfileConfig},
     error::DockerError,
 };
 use std::collections::HashMap;

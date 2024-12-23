@@ -3,7 +3,7 @@ use bollard::Docker;
 use crate::error::DockerError;
 
 pub mod compose;
-pub mod dockerfile;
+pub mod docker_file;
 pub mod management;
 
 pub struct DockerBuilder {

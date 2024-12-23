@@ -1,9 +1,13 @@
+// Parser tests always available
 mod compose;
+mod docker_file;
+
+// Deployment tests only with deploy feature
 mod compose_health;
 mod compose_resources;
-mod dockerfile;
-mod fixtures;
 mod management;
+
+mod fixtures;
 
 use std::path::PathBuf;
 

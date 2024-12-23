@@ -1,8 +1,5 @@
-use crate::{DockerError, tests::dockerfile::is_docker_running};
-use bollard::{
-    container::ListContainersOptions,
-    secret::{Ipam, IpamConfig},
-};
+use crate::tests::docker_file::is_docker_running;
+use bollard::container::ListContainersOptions;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 
@@ -88,34 +85,12 @@ async fn test_compose_deployment() {
     }
 
     let builder = DockerBuilder::new().unwrap();
-
-    // Create a unique network name for this test
     let network_name = format!("test-network-{}", uuid::Uuid::new_v4());
 
-    // Create network
+    // Create network with retry mechanism
     builder
-        .get_client()
-        .create_network(bollard::network::CreateNetworkOptions {
-            name: network_name.as_str(),
-            driver: "bridge",
-            check_duplicate: true,
-            internal: false,
-            attachable: true,
-            ingress: false,
-            ipam: Ipam {
-                driver: Some("default".to_string()),
-                config: Some(vec![IpamConfig {
-                    subnet: Some("172.30.0.0/16".to_string()),
-                    gateway: Some("172.30.0.1".to_string()),
-                    ip_range: None,
-                    auxiliary_addresses: None,
-                }]),
-                options: None,
-            },
-            ..Default::default()
-        })
+        .create_network_with_retry(&network_name, 3)
         .await
-        .map_err(|e| DockerError::NetworkCreationError(e.to_string()))
         .unwrap();
 
     // Create a simple test compose config
@@ -142,7 +117,7 @@ async fn test_compose_deployment() {
     assert_eq!(container_ids.len(), 1);
 
     // Verify containers are running
-    for (service_name, container_id) in container_ids {
+    for (_, container_id) in container_ids {
         let mut filters = HashMap::new();
         filters.insert("id".to_string(), vec![container_id.clone()]);
 

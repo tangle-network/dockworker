@@ -1,14 +1,21 @@
-mod builder;
 mod config;
 mod error;
 mod parser;
 
-#[cfg(test)]
-mod tests;
+#[cfg(feature = "deploy")]
+mod builder;
 
-pub use builder::DockerBuilder;
+// Always export parsing-related items
 pub use config::{
     compose::{BuildConfig, ComposeConfig, ServiceConfig},
-    dockerfile::{DockerCommand, DockerfileConfig},
+    docker_file::{DockerCommand, DockerfileConfig},
 };
 pub use error::DockerError;
+pub use parser::{compose::ComposeParser, docker_file::DockerfileParser};
+
+// Only export deployment-related items when "deploy" feature is enabled
+#[cfg(feature = "deploy")]
+pub use builder::DockerBuilder;
+
+#[cfg(test)]
+pub mod tests;

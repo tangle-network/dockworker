@@ -1,8 +1,10 @@
-use bollard::container::{CreateContainerOptions, StartContainerOptions};
-
-use super::dockerfile::is_docker_running;
-use crate::DockerBuilder;
+use bollard::container::CreateContainerOptions;
 use std::collections::HashMap;
+use std::time::Duration;
+use tokio::time::timeout;
+
+use super::docker_file::is_docker_running;
+use crate::DockerBuilder;
 
 #[tokio::test]
 async fn test_network_management() {
@@ -12,20 +14,53 @@ async fn test_network_management() {
     }
 
     let builder = DockerBuilder::new().unwrap();
-    let network_name = format!("test-network-{}", uuid::Uuid::new_v4());
+    let test_network = format!("test-network-{}", uuid::Uuid::new_v4());
 
-    // Create network
-    builder
-        .create_network(&network_name, Some("172.20.0.0/16"), Some("172.20.0.1"))
+    // Test 1: Network Creation
+    let result = timeout(
+        Duration::from_secs(5),
+        builder.create_network(
+            &test_network,
+            "172.18.0.0/16", // Use a specific subnet for testing
+            "172.18.0.1",
+        ),
+    )
+    .await
+    .expect("Network creation timed out")
+    .expect("Failed to create network");
+
+    assert!(result.id.is_some(), "Network creation should return an ID");
+
+    // Test 2: Network Listing
+    let networks = timeout(Duration::from_secs(5), builder.list_networks())
         .await
-        .unwrap();
+        .expect("Network listing timed out")
+        .expect("Failed to list networks");
 
-    // List networks
-    let networks = builder.list_networks().await.unwrap();
-    assert!(networks.contains(&network_name));
+    assert!(
+        networks.contains(&test_network),
+        "Created network should be in the list"
+    );
 
-    // Clean up
-    builder.remove_network(&network_name).await.unwrap();
+    // Test 3: Network Removal
+    timeout(
+        Duration::from_secs(5),
+        builder.remove_network(&test_network),
+    )
+    .await
+    .expect("Network removal timed out")
+    .expect("Failed to remove network");
+
+    // Verify removal
+    let networks_after = timeout(Duration::from_secs(5), builder.list_networks())
+        .await
+        .expect("Network listing timed out")
+        .expect("Failed to list networks");
+
+    assert!(
+        !networks_after.contains(&test_network),
+        "Removed network should not be in the list"
+    );
 }
 
 #[tokio::test]

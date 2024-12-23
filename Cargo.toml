@@ -1,24 +1,39 @@
 [package]
-name = "docker-yaml-to-bollard"
+name = "dockworker"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["parser"]
+deploy = [
+    "bollard",
+    "futures-util",
+    "ipnet",
+    "tempfile",
+    "tar",
+    "tokio",
+    "uuid",
+]
+parser = []  # Base feature for just parsing
+
 [dependencies]
-bollard = "0.17"
-futures-util = "0.3.31"
-serde = { version = "1.0.216", features = ["derive"] }
-serde_yaml = "0.9.34"
-tempfile = "3.14.0"
-thiserror = "2.0.9"
-tokio = { version = "1.42.0", features = ["full"] }
-uuid = { version = "1.11.0", features = ["v4"] }
-tar = "0.4"
+# Core dependencies (always included)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
 shell-words = "1.1"
-serde_json = "1.0.134"
+thiserror = "1.0"
+
+# Optional dependencies (only with deploy feature)
+bollard = { version = "0.14", optional = true }
+futures-util = { version = "0.3", optional = true }
+ipnet = { version = "2.10.1", optional = true }
+tar = { version = "0.4.43", optional = true }
+tempfile = { version = "3.14.0", optional = true }
+tokio = { version = "1.0", features = ["full"], optional = true }
+uuid = { version = "1.0", optional = true, features = ["v4"] }
 
 [dev-dependencies]
-async-trait = "0.1.83"
+dockworker = { path = ".", features = ["parser", "deploy"] }
+tokio = { version = "1.0", features = ["full"] }
 pretty_assertions = "1.4.1"
-testcontainers = "0.23.1"
-tokio-test = "0.4.4"
-

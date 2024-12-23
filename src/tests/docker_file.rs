@@ -1,13 +1,11 @@
+use crate::{
+    DockerBuilder, DockerCommand, DockerError, DockerfileConfig,
+    parser::docker_file::DockerfileParser,
+};
 use bollard::container::ListContainersOptions;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::process::Command;
-use std::time::Duration;
-
-use crate::{
-    DockerBuilder, DockerCommand, DockerError, DockerfileConfig,
-    parser::dockerfile::DockerfileParser,
-};
 
 use super::fixtures::get_tangle_dockerfile;
 
@@ -87,7 +85,7 @@ async fn test_dockerfile_deployment() {
 
     let builder = DockerBuilder::new().unwrap();
 
-    // Create a simple test Dockerfile config with actual content
+    // Create a simple test Dockerfile config
     let config = DockerfileConfig {
         base_image: "alpine:latest".to_string(),
         commands: vec![
@@ -101,7 +99,12 @@ async fn test_dockerfile_deployment() {
     };
 
     let tag = format!("test-dockerfile:{}", uuid::Uuid::new_v4());
-    let container_id = builder.deploy_dockerfile(&config, &tag).await.unwrap();
+
+    // Deploy using our config
+    let container_id = builder
+        .deploy_dockerfile(&config, &tag)
+        .await
+        .expect("Failed to deploy Dockerfile");
 
     // Verify container is running
     let mut filters = std::collections::HashMap::new();
@@ -121,7 +124,6 @@ async fn test_dockerfile_deployment() {
     assert_eq!(containers[0].id.as_ref().unwrap(), &container_id);
 
     // Clean up
-    tokio::time::sleep(Duration::from_secs(1)).await;
     builder
         .get_client()
         .remove_container(
@@ -134,7 +136,6 @@ async fn test_dockerfile_deployment() {
         .await
         .unwrap();
 
-    // Clean up the image
     builder
         .get_client()
         .remove_image(&tag, None, None)

@@ -1,4 +1,4 @@
-use super::dockerfile::is_docker_running;
+use super::docker_file::is_docker_running;
 use crate::DockerError;
 use crate::builder::compose::parse_memory_string;
 use crate::{
@@ -15,7 +15,6 @@ async fn test_resource_limits() {
     }
 
     let builder = DockerBuilder::new().unwrap();
-    let network_name = format!("test-network-{}", uuid::Uuid::new_v4());
 
     // Create a service with resource limits
     let mut services = HashMap::new();
