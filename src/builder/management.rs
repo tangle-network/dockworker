@@ -16,6 +16,7 @@ impl DockerBuilder {
         name: &str,
         max_retries: u32,
         initial_delay: Duration,
+        labels: Option<HashMap<String, String>>,
     ) -> Result<(), DockerError> {
         let mut delay = initial_delay;
         let mut attempts = 0;
@@ -26,6 +27,7 @@ impl DockerBuilder {
                 .create_network(CreateNetworkOptions {
                     name: name.to_string(),
                     driver: "bridge".to_string(),
+                    labels: labels.clone().unwrap_or_default(),
                     ..Default::default()
                 })
                 .await;

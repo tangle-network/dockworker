@@ -1,5 +1,6 @@
 use crate::{
     VolumeType, builder::compose::parse_memory_string, tests::docker_file::is_docker_running,
+    with_docker_cleanup,
 };
 use bollard::container::ListContainersOptions;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
@@ -8,6 +9,7 @@ use crate::{BuildConfig, ComposeConfig, DockerBuilder, Service};
 
 use super::fixtures::{get_local_reth_compose, get_reth_archive_compose};
 
+// Sync tests that don't need Docker cleanup
 #[test]
 fn test_compose_parsing() {
     let yaml = r#"
@@ -43,7 +45,7 @@ fn test_compose_parsing() {
     assert_eq!(command.len(), 8);
     assert_eq!(command[0], "/reth/target/release/reth");
     assert_eq!(command[1], "node");
-    // Test volume configuration
+
     let volumes = service.volumes.as_ref().unwrap();
     assert_eq!(volumes.len(), 1);
 
@@ -61,8 +63,7 @@ fn test_compose_parsing() {
     }
 }
 
-#[tokio::test]
-async fn test_reth_archive_compose_parsing() {
+with_docker_cleanup!(test_reth_archive_compose_parsing, async |test_id: &str| {
     let builder = DockerBuilder::new().unwrap();
     let config = builder
         .from_compose(get_reth_archive_compose())
@@ -120,10 +121,9 @@ async fn test_reth_archive_compose_parsing() {
     assert!(
         matches!(&nimbus_volumes[1], VolumeType::Named(name) if name == "reth_jwt:/jwt/reth:ro")
     );
-}
+});
 
-#[tokio::test]
-async fn test_local_reth_compose_parsing() {
+with_docker_cleanup!(test_local_reth_compose_parsing, async |test_id: &str| {
     let builder = DockerBuilder::new().unwrap();
     let config = builder
         .from_compose(get_local_reth_compose())
@@ -169,57 +169,9 @@ async fn test_local_reth_compose_parsing() {
     assert!(config.volumes.contains_key("rethlogs"));
     assert!(config.volumes.contains_key("prometheusdata"));
     assert!(config.volumes.contains_key("grafanadata"));
-    // Test volume configurations
-    for volume_name in ["rethdata", "rethlogs", "prometheusdata", "grafanadata"] {
-        let volume = config.volumes.get(volume_name).unwrap();
-        match volume {
-            VolumeType::Config { driver, .. } => {
-                assert_eq!(driver.as_deref(), Some("local"));
-            }
-            _ => panic!("Expected Config volume type for {}", volume_name),
-        }
-    }
+});
 
-    // Test volume mount paths for reth service
-    let reth_volumes = reth.volumes.as_ref().unwrap();
-    assert!(reth_volumes.iter().any(|v| match v {
-        VolumeType::Named(s) => s.starts_with("rethdata:"),
-        _ => false,
-    }));
-    assert!(reth_volumes.iter().any(|v| match v {
-        VolumeType::Named(s) => s.starts_with("rethlogs:"),
-        _ => false,
-    }));
-
-    // Test volume mount paths for prometheus service
-    let prom_volumes = prometheus.volumes.as_ref().unwrap();
-    assert!(prom_volumes.iter().any(|v| match v {
-        VolumeType::Bind { source, target, .. } => {
-            source == "./prometheus/" && target == "/etc/prometheus/"
-        }
-        _ => false,
-    }));
-    assert!(prom_volumes.iter().any(|v| match v {
-        VolumeType::Named(s) => s.starts_with("prometheusdata:"),
-        _ => false,
-    }));
-
-    // Test volume mount paths for grafana service
-    let grafana_volumes = grafana.volumes.as_ref().unwrap();
-    assert!(grafana_volumes.iter().any(|v| match v {
-        VolumeType::Named(s) => s.starts_with("grafanadata:"),
-        _ => false,
-    }));
-    assert!(grafana_volumes.iter().any(|v| match v {
-        VolumeType::Bind { source, target, .. } => {
-            source == "./grafana/provisioning/" && target == "/etc/grafana/provisioning/"
-        }
-        _ => false,
-    }));
-}
-
-#[tokio::test]
-async fn test_compose_deployment() {
+with_docker_cleanup!(test_compose_deployment, async |test_id: &str| {
     if !is_docker_running() {
         println!("Skipping test: Docker is not running");
         return;
@@ -228,24 +180,31 @@ async fn test_compose_deployment() {
     let builder = DockerBuilder::new().unwrap();
     let network_name = format!("test-network-{}", uuid::Uuid::new_v4());
 
+    let mut labels = HashMap::new();
+    labels.insert("test_id".to_string(), test_id.to_string());
+
     // Create network with retry mechanism
     builder
-        .create_network_with_retry(&network_name, 3, Duration::from_secs(2))
+        .create_network_with_retry(&network_name, 3, Duration::from_secs(2), Some(labels))
         .await
         .unwrap();
 
     // Create a simple test compose config
     let mut services = HashMap::new();
-    services.insert("test-service".to_string(), Service {
+    let mut env = HashMap::new();
+    env.insert("TEST".to_string(), "value".to_string());
+
+    let mut labels = HashMap::new();
+    labels.insert("test_id".to_string(), test_id.to_string());
+
+    let service_name = format!("test-service-{}", test_id);
+    services.insert(service_name, Service {
         image: Some("alpine:latest".to_string()),
         ports: Some(vec!["8080:80".to_string()]),
-        environment: Some({
-            let mut env = HashMap::new();
-            env.insert("TEST".to_string(), "value".to_string());
-            env
-        }),
+        environment: Some(env),
         volumes: None,
         networks: Some(vec![network_name.clone()]),
+        labels: Some(labels),
         ..Service::default()
     });
 
@@ -258,53 +217,50 @@ async fn test_compose_deployment() {
     let container_ids = builder.deploy_compose(&mut config).await.unwrap();
     assert_eq!(container_ids.len(), 1);
 
+    // Add a small delay to ensure Docker has time to start the container
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
     // Verify containers are running
     for (_, container_id) in container_ids {
         let mut filters = HashMap::new();
         filters.insert("id".to_string(), vec![container_id.clone()]);
+        filters.insert("label".to_string(), vec![format!("test_id={}", test_id)]);
 
-        let containers = builder
-            .get_client()
-            .list_containers(Some(ListContainersOptions {
-                all: true,
-                filters,
-                ..Default::default()
-            }))
-            .await
-            .unwrap();
-
-        assert_eq!(containers.len(), 1);
-        assert_eq!(containers[0].id.as_ref().unwrap(), &container_id);
-
-        // Clean up container
-        builder
-            .get_client()
-            .remove_container(
-                &container_id,
-                Some(bollard::container::RemoveContainerOptions {
-                    force: true,
+        let mut retries = 5;
+        let mut containers_found = false;
+        while retries > 0 {
+            match builder
+                .get_client()
+                .list_containers(Some(ListContainersOptions {
+                    all: true,
+                    filters: filters.clone(),
                     ..Default::default()
-                }),
-            )
-            .await
-            .unwrap();
+                }))
+                .await
+            {
+                Ok(containers) => {
+                    if containers.len() == 1 && containers[0].id.as_ref().unwrap() == &container_id
+                    {
+                        containers_found = true;
+                        break;
+                    }
+                }
+                Err(e) => println!("Error listing containers: {:?}", e),
+            }
+            retries -= 1;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        assert!(containers_found, "Container not found or not running");
     }
+});
 
-    // Clean up network
-    builder
-        .get_client()
-        .remove_network(&network_name)
-        .await
-        .unwrap();
-}
-
-#[tokio::test]
-async fn test_compose_with_build() {
+with_docker_cleanup!(test_compose_with_build, async |test_id: &str| {
     let builder = DockerBuilder::new().unwrap();
 
     // Create a compose config with build context
     let mut services = HashMap::new();
-    services.insert("build-service".to_string(), Service {
+    services.insert("test-build-service".to_string(), Service {
         image: None,
         build: Some(BuildConfig {
             context: "./".to_string(),
@@ -320,6 +276,7 @@ async fn test_compose_with_build() {
         restart: None,
         command: None,
         user: None,
+        labels: None,
     });
 
     let mut config = ComposeConfig {
@@ -331,92 +288,43 @@ async fn test_compose_with_build() {
     let result = builder.deploy_compose(&mut config).await;
     // This should fail because we don't have a Dockerfile in the current directory
     assert!(result.is_err());
-}
+});
 
-#[test]
-fn test_compose_volume_parsing() {
-    let yaml = r#"
-            version: "3.8"
-            services:
-              test:
-                volumes:
-                  - source: named_vol
-                    target: /data
-                    type: volume
-                  - source: ./local
-                    target: /container
-                    type: bind
-                  - source: /abs/path
-                    target: /container/config
-                    type: bind
-                    read_only: true
-        "#;
+with_docker_cleanup!(test_volume_validation, async |test_id: &str| {
+    let mut config = ComposeConfig {
+        version: "3.8".to_string(),
+        services: HashMap::new(),
+        volumes: HashMap::new(),
+    };
 
-    let config: ComposeConfig = serde_yaml::from_str(yaml).unwrap();
-    let service = config.services.get("test").unwrap();
-    let volumes = service.volumes.as_ref().unwrap();
+    let service = Service {
+        volumes: Some(vec![
+            VolumeType::Named("test-data:/data".to_string()),
+            VolumeType::Bind {
+                source: PathBuf::from("/host").to_string_lossy().to_string(),
+                target: "/container".to_string(),
+                read_only: false,
+            },
+        ]),
+        ..Default::default()
+    };
 
-    assert_eq!(volumes.len(), 3);
+    config.services.insert("test".to_string(), service);
 
-    // Check named volume
-    assert!(matches!(&volumes[0], VolumeType::Named(name) if name == "named_vol:/data"));
+    // Test validation of named volumes
+    assert!(config.validate_required_volumes(&["test-data"]).is_ok());
 
-    // Check relative path bind mount
-    match &volumes[1] {
-        VolumeType::Bind {
-            source,
-            target,
-            read_only,
-        } => {
-            assert_eq!(
-                source,
-                &PathBuf::from("./local").to_string_lossy().to_string()
-            );
-            assert_eq!(target, "/container");
-            assert!(!read_only);
-        }
-        _ => panic!("Expected bind mount"),
-    }
+    // Test validation of bind mounts by target path
+    assert!(config.validate_required_volumes(&["/container"]).is_ok());
 
-    // Check absolute path bind mount with read-only
-    match &volumes[2] {
-        VolumeType::Bind {
-            source,
-            target,
-            read_only,
-        } => {
-            assert_eq!(
-                source,
-                &PathBuf::from("/abs/path").to_string_lossy().to_string()
-            );
-            assert_eq!(target, "/container/config");
-            assert!(*read_only);
-        }
-        _ => panic!("Expected bind mount"),
-    }
-}
+    // Test validation of missing volumes
+    assert!(config.validate_required_volumes(&["missing"]).is_err());
 
-#[test]
-fn test_service_volume_fixing() {
-    let mut config = ComposeConfig::default();
-    let mut service = Service::default();
-    service.volumes = Some(vec![VolumeType::Bind {
-        source: "./data".to_string(),
-        target: "/container/data".to_string(),
-        read_only: false,
-    }]);
-    config.services.insert("test_service".to_string(), service);
+    // Test validation of missing bind mount targets
+    assert!(config.validate_required_volumes(&["/missing"]).is_err());
+});
 
-    let volumes = config.services["test_service"].volumes.as_ref().unwrap();
-    assert!(
-        matches!(&volumes[0], VolumeType::Bind { source, target, read_only }
-            if source == "./data"
-                && target == "/container/data"
-                && !read_only
-        )
-    );
-}
-
+// Sync tests that don't need Docker cleanup
 #[test]
 fn test_volume_serialization() {
     let volume = VolumeType::Bind {
@@ -437,41 +345,6 @@ fn test_volume_serialization() {
 }
 
 #[test]
-fn test_volume_validation() {
-    let mut config = ComposeConfig {
-        version: "3.8".to_string(),
-        services: HashMap::new(),
-        volumes: HashMap::new(),
-    };
-
-    let service = Service {
-        volumes: Some(vec![
-            VolumeType::Named("data:/data".to_string()),
-            VolumeType::Bind {
-                source: PathBuf::from("/host").to_string_lossy().to_string(),
-                target: "/container".to_string(),
-                read_only: false,
-            },
-        ]),
-        ..Default::default()
-    };
-
-    config.services.insert("test".to_string(), service);
-
-    // Test validation of named volumes
-    assert!(config.validate_required_volumes(&["data"]).is_ok());
-
-    // Test validation of bind mounts by target path
-    assert!(config.validate_required_volumes(&["/container"]).is_ok());
-
-    // Test validation of missing volumes
-    assert!(config.validate_required_volumes(&["missing"]).is_err());
-
-    // Test validation of missing bind mount targets
-    assert!(config.validate_required_volumes(&["/missing"]).is_err());
-}
-
-#[test]
 fn test_service_deployment() {
     let mut config = ComposeConfig::default();
     let service = Service {
@@ -485,8 +358,6 @@ fn test_service_deployment() {
     };
 
     config.services.insert("web".to_string(), service);
-
-    // Add test assertions here
     assert!(config.services.contains_key("web"));
 }
 

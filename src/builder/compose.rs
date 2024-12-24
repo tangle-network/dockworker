@@ -208,10 +208,12 @@ impl DockerBuilder {
             }
         }
 
+        // Create container configuration
         let mut container_config = Config {
             image: Some(image),
             cmd: service.command.clone(),
             env: Self::prepare_environment_variables(service),
+            labels: service.labels.clone(),
             ..Default::default()
         };
 

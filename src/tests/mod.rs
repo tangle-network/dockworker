@@ -1,11 +1,12 @@
 // Parser tests always available
-mod compose;
-mod docker_file;
+pub mod compose;
+pub mod docker_file;
+pub mod fixtures;
+pub mod utils;
 
 // Deployment tests only with deploy feature
 mod compose_health;
 mod compose_requirements;
-mod fixtures;
 mod integration;
 mod management;
 

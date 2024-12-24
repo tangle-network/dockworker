@@ -47,6 +47,8 @@ pub struct Service {
     pub healthcheck: Option<HealthCheck>,
     pub restart: Option<String>,
     pub user: Option<String>,
+    #[serde(default)]
+    pub labels: Option<HashMap<String, String>>,
 }
 
 fn deserialize_command<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>

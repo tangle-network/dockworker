@@ -2,6 +2,8 @@ use crate::DockerBuilder;
 use crate::config::compose::ComposeConfig;
 use crate::config::volume::VolumeType;
 use crate::parser::compose::ComposeParser;
+use crate::with_docker_cleanup;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::fs;
@@ -15,10 +17,11 @@ pub struct OptimismTestContext {
     pub config: ComposeConfig,
     pub test_dir: PathBuf,
     pub network_name: String,
+    pub test_id: String,
 }
 
 impl OptimismTestContext {
-    pub async fn new() -> Result<Self, crate::error::DockerError> {
+    pub async fn new(test_id: String) -> Result<Self, crate::error::DockerError> {
         let builder = DockerBuilder::new()?;
 
         // Read and parse the compose file
@@ -42,6 +45,7 @@ impl OptimismTestContext {
             config,
             test_dir,
             network_name,
+            test_id,
         })
     }
 
@@ -237,11 +241,6 @@ impl OptimismTestContext {
             ))
         })?;
 
-        // Remove network
-        if let Err(e) = self.builder.remove_network(&self.network_name).await {
-            println!("Warning: Failed to remove network: {}", e);
-        }
-
         Ok(())
     }
 }
@@ -251,25 +250,34 @@ mod tests {
     use super::*;
     use std::env;
 
-    #[tokio::test]
-    async fn test_optimism_node_deployment() -> Result<(), Box<dyn std::error::Error>> {
-        let mut ctx = OptimismTestContext::new().await?;
+    with_docker_cleanup!(test_optimism_node_deployment, async |test_id: &str| {
+        let mut ctx = OptimismTestContext::new(test_id.to_string()).await.unwrap();
 
         // Setup test environment
-        ctx.setup_directories().await?;
+        ctx.setup_directories().await.unwrap();
 
         // Create Docker network
+        let mut network_labels = HashMap::new();
+        network_labels.insert("test_id".to_string(), test_id.to_string());
+
         ctx.builder
-            .create_network_with_retry(&ctx.network_name, 5, Duration::from_millis(100))
-            .await?;
+            .create_network_with_retry(
+                &ctx.network_name,
+                5,
+                Duration::from_millis(100),
+                Some(network_labels),
+            )
+            .await
+            .unwrap();
 
         // Pull required base images
         ctx.builder
             .pull_image("ubuntu:22.04", Some("linux/amd64"))
-            .await?;
+            .await
+            .unwrap();
 
         // Fix volume paths to use absolute paths
-        let current_dir = env::current_dir()?;
+        let current_dir = env::current_dir().unwrap();
         for service in ctx.config.services.values_mut() {
             if let Some(volumes) = &mut service.volumes {
                 for volume in volumes.iter_mut() {
@@ -284,15 +292,22 @@ mod tests {
                     }
                 }
             }
+
+            // Add test_id label to each service
+            let mut labels = service.labels.clone().unwrap_or_default();
+            labels.insert("test_id".to_string(), test_id.to_string());
+            service.labels = Some(labels);
         }
 
         // Load and parse the compose file with environment variables
         let compose_path = ctx.get_compose_path();
         let env_path = ctx.get_env_path();
-        ctx.config = ComposeParser::from_file_with_env(&compose_path, &env_path).await?;
+        ctx.config = ComposeParser::from_file_with_env(&compose_path, &env_path)
+            .await
+            .unwrap();
 
         // Deploy all services using our library's functionality
-        let container_ids = ctx.builder.deploy_compose(&mut ctx.config).await?;
+        let container_ids = ctx.builder.deploy_compose(&mut ctx.config).await.unwrap();
 
         // Verify services are running
         for (service_name, container_id) in container_ids {
@@ -302,9 +317,7 @@ mod tests {
             );
         }
 
-        // Cleanup
-        ctx.cleanup().await?;
-
-        Ok(())
-    }
+        // Clean up test directory (network cleanup is handled by with_docker_cleanup)
+        ctx.cleanup().await.unwrap();
+    });
 }
