@@ -1,19 +1,39 @@
 use super::docker_file::is_docker_running;
 use crate::{
     DockerBuilder,
-    config::compose::{ComposeConfig, HealthCheck, Service},
+    config::{
+        HealthCheck,
+        compose::{ComposeConfig, Service},
+    },
+    with_docker_cleanup,
 };
 use futures_util::TryStreamExt;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
-#[tokio::test]
-async fn test_healthcheck() {
+with_docker_cleanup!(test_healthcheck, async |test_id: &str| {
     if !is_docker_running() {
         println!("Skipping test: Docker is not running");
         return;
     }
 
     let builder = DockerBuilder::new().unwrap();
+    let network_name = format!("test-network-{}", test_id);
+
+    let mut network_labels = HashMap::new();
+    network_labels.insert("test_id".to_string(), test_id.to_string());
+
+    // Create network with retry mechanism
+    builder
+        .create_network_with_retry(
+            &network_name,
+            3,
+            Duration::from_secs(2),
+            Some(network_labels),
+        )
+        .await
+        .unwrap();
+
+    let service_name = format!("healthy-service-{}", test_id);
 
     // Pull nginx image first
     builder
@@ -33,30 +53,34 @@ async fn test_healthcheck() {
 
     // Create a service with healthcheck
     let mut services = HashMap::new();
-    services.insert("healthy-service".to_string(), Service {
+    let mut labels = HashMap::new();
+    labels.insert("test_id".to_string(), test_id.to_string());
+
+    services.insert(service_name.clone(), Service {
         image: Some("nginx:latest".to_string()),
         healthcheck: Some(HealthCheck {
-            test: vec![
-                "CMD-SHELL".to_string(),
-                "curl -f http://localhost/ || exit 1".to_string(),
-            ],
-            interval: Some(1_000_000_000), // 1 second
-            timeout: Some(3_000_000_000),  // 3 seconds
-            retries: Some(3),
-            start_period: Some(2_000_000_000), // 2 seconds
-            start_interval: None,
+            endpoint: "http://localhost/".to_string(),
+            method: "GET".to_string(),
+            expected_status: 200,
+            body: None,
+            interval: Duration::from_secs(1),
+            timeout: Duration::from_secs(3),
+            retries: 3,
         }),
         ports: Some(vec!["8080:80".to_string()]),
+        networks: Some(vec![network_name.clone()]),
+        labels: Some(labels),
         ..Default::default()
     });
 
-    let config = ComposeConfig {
+    let mut config = ComposeConfig {
         version: "3".to_string(),
         services,
+        volumes: HashMap::new(),
     };
 
-    let container_ids = builder.deploy_compose(&config).await.unwrap();
-    let container_id = container_ids.values().next().unwrap();
+    let container_ids = builder.deploy_compose(&mut config).await.unwrap();
+    let container_id = container_ids.get(&service_name).unwrap();
 
     // Wait for container to be healthy
     builder.wait_for_container(&container_id).await.unwrap();
@@ -74,7 +98,10 @@ async fn test_healthcheck() {
                 healthcheck.test,
                 Some(vec![
                     "CMD-SHELL".to_string(),
-                    "curl -f http://localhost/ || exit 1".to_string()
+                    format!(
+                        "curl -X GET {} -s -f -o /dev/null -w '%{{http_code}}' | grep -q {}",
+                        "http://localhost/", "200"
+                    )
                 ])
             );
             assert_eq!(healthcheck.interval, Some(1_000_000_000));
@@ -82,17 +109,4 @@ async fn test_healthcheck() {
             assert_eq!(healthcheck.retries, Some(3));
         }
     }
-
-    // Clean up
-    builder
-        .get_client()
-        .remove_container(
-            container_id,
-            Some(bollard::container::RemoveContainerOptions {
-                force: true,
-                ..Default::default()
-            }),
-        )
-        .await
-        .unwrap();
-}
+});

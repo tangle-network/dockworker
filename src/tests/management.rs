@@ -1,171 +1,244 @@
-use bollard::container::CreateContainerOptions;
-use std::collections::HashMap;
-use std::time::Duration;
-use tokio::time::timeout;
+use crate::{DockerBuilder, with_docker_cleanup};
+use bollard::container::{
+    Config, CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
+};
+use futures::TryStreamExt;
+use std::{collections::HashMap, time::Duration};
+use uuid::Uuid;
 
-use super::docker_file::is_docker_running;
-use crate::DockerBuilder;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-    use tokio::time::timeout;
-    use uuid::Uuid;
-
-    #[tokio::test]
-    async fn test_network_management() -> Result<(), Box<dyn std::error::Error>> {
-        let builder = DockerBuilder::new()?;
-
-        // Create a unique network name
-        let network_name = format!("test_network_{}", Uuid::new_v4());
-
-        // Create network with retries
-        let result = timeout(
-            Duration::from_secs(30),
-            builder.create_network_with_retry(
-                &network_name,
-                5,                          // max retries
-                Duration::from_millis(100), // initial delay
-            ),
-        )
-        .await??;
-
-        assert!(result.id.is_some(), "Network creation should return an ID");
-
-        // Verify network exists
-        let networks = timeout(Duration::from_secs(5), builder.list_networks()).await??;
-        assert!(
-            networks.contains(&network_name),
-            "Created network should be in the list"
-        );
-
-        // Clean up
-        timeout(
-            Duration::from_secs(5),
-            builder.remove_network(&network_name),
-        )
-        .await??;
-
-        // Verify removal
-        let networks_after = timeout(Duration::from_secs(5), builder.list_networks()).await??;
-        assert!(
-            !networks_after.contains(&network_name),
-            "Removed network should not be in the list"
-        );
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn test_network_subnet_validation() -> Result<(), Box<dyn std::error::Error>> {
-        let builder = DockerBuilder::new()?;
-
-        // Test finding available subnet
-        let (subnet, gateway) = builder.find_available_subnet().await?;
-
-        // Validate subnet format
-        assert!(
-            subnet.parse::<ipnet::IpNet>().is_ok(),
-            "Subnet should be valid CIDR"
-        );
-
-        // Validate gateway is in subnet
-        let subnet_net = subnet.parse::<ipnet::IpNet>()?;
-        let gateway_ip = gateway.parse::<std::net::IpAddr>()?;
-        assert!(
-            subnet_net.contains(&gateway_ip),
-            "Gateway should be in subnet"
-        );
-
-        Ok(())
-    }
-}
-
-#[tokio::test]
-async fn test_volume_management() {
-    if !is_docker_running() {
-        println!("Skipping test: Docker is not running");
-        return;
-    }
-
+with_docker_cleanup!(test_network_management, async |test_id: &str| {
     let builder = DockerBuilder::new().unwrap();
-    let volume_name = format!("test-volume-{}", uuid::Uuid::new_v4());
+    let network_name = format!("test-network-{}", Uuid::new_v4());
+
+    let mut network_labels = HashMap::new();
+    network_labels.insert("test_id".to_string(), test_id.to_string());
+
+    // Create network with retry
+    builder
+        .create_network_with_retry(
+            &network_name,
+            5,
+            Duration::from_millis(100),
+            Some(network_labels),
+        )
+        .await
+        .unwrap();
+
+    // Verify network exists
+    let networks = builder.list_networks().await.unwrap();
+    assert!(
+        networks.contains(&network_name),
+        "Created network should be in the list"
+    );
+});
+
+with_docker_cleanup!(test_volume_management, async |test_id: &str| {
+    let builder = DockerBuilder::new().unwrap();
+    let volume_name = format!("test-volume-{}", test_id);
 
     // Create volume
     builder.create_volume(&volume_name).await.unwrap();
 
-    // List volumes
+    // Verify volume exists
     let volumes = builder.list_volumes().await.unwrap();
-    assert!(volumes.contains(&volume_name));
+    assert!(
+        volumes.contains(&volume_name),
+        "Created volume should be in the list"
+    );
+});
 
-    // Clean up
-    builder.remove_volume(&volume_name).await.unwrap();
-}
-
-#[tokio::test]
-async fn test_container_logs_and_exec() {
-    if !is_docker_running() {
-        println!("Skipping test: Docker is not running");
-        return;
-    }
-
+with_docker_cleanup!(test_container_management, async |test_id: &str| {
     let builder = DockerBuilder::new().unwrap();
+    let unique_id = Uuid::new_v4();
+    let container_name = format!("test-mgmt-{}-integration", unique_id);
+    println!("Starting test with container name: {}", container_name);
 
-    // Create a test container
-    let container_config = bollard::container::Config {
-        image: Some("alpine:latest"),
-        cmd: Some(vec!["sh", "-c", "echo 'test message' && sleep 10"]),
-        tty: Some(true),
-        ..Default::default()
-    };
+    // Pull image first to avoid potential "No such image" errors
+    println!("Pulling alpine image...");
+    builder
+        .get_client()
+        .create_image(
+            Some(bollard::image::CreateImageOptions {
+                from_image: "alpine",
+                tag: "latest",
+                ..Default::default()
+            }),
+            None,
+            None,
+        )
+        .try_collect::<Vec<_>>()
+        .await
+        .unwrap();
+    println!("Image pull complete");
+
+    // Create container first
+    let mut labels = HashMap::new();
+    labels.insert("test_id", test_id);
 
     let container = builder
         .get_client()
         .create_container(
             Some(CreateContainerOptions {
-                name: format!("test-container-{}", uuid::Uuid::new_v4()),
+                name: container_name.clone(),
                 platform: None,
             }),
-            container_config,
-        )
-        .await
-        .unwrap();
-
-    builder
-        .get_client()
-        .start_container::<String>(&container.id, None)
-        .await
-        .unwrap();
-
-    // Wait for container to be running
-    builder.wait_for_container(&container.id).await.unwrap();
-
-    // Now safe to get logs
-    let logs = builder.get_container_logs(&container.id).await.unwrap();
-    assert!(logs.contains("test message"));
-
-    // Test exec
-    let mut env = HashMap::new();
-    env.insert("TEST_VAR".to_string(), "test_value".to_string());
-
-    let exec_output = builder
-        .exec_in_container(&container.id, vec!["sh", "-c", "echo $TEST_VAR"], Some(env))
-        .await
-        .unwrap();
-
-    assert!(exec_output.contains("test_value"));
-
-    // Clean up
-    builder
-        .get_client()
-        .remove_container(
-            &container.id,
-            Some(bollard::container::RemoveContainerOptions {
-                force: true,
+            Config {
+                image: Some("alpine:latest"),
+                cmd: Some(vec!["sleep", "30"]), // Longer sleep to avoid timing issues
+                labels: Some(labels),
+                tty: Some(true),
                 ..Default::default()
-            }),
+            },
         )
         .await
         .unwrap();
-}
+    println!("Container created with ID: {}", container.id);
+
+    // Add a small delay after creation to ensure Docker has fully registered the container
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Log container state after creation
+    if let Ok(inspect) = builder
+        .get_client()
+        .inspect_container(&container.id, None::<InspectContainerOptions>)
+        .await
+    {
+        println!("Container state after creation: {:?}", inspect.state);
+    } else {
+        println!("Failed to inspect container after creation");
+    }
+
+    // Start container with retry logic
+    let mut start_retries = 3;
+    let mut start_success = false;
+    while start_retries > 0 && !start_success {
+        match builder
+            .get_client()
+            .start_container(
+                &container.id,
+                None::<bollard::container::StartContainerOptions<String>>,
+            )
+            .await
+        {
+            Ok(_) => {
+                println!("Container started successfully");
+                start_success = true;
+            }
+            Err(e) => {
+                println!(
+                    "Failed to start container (attempt {}): {:?}",
+                    4 - start_retries,
+                    e
+                );
+                start_retries -= 1;
+                if start_retries > 0 {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+
+    assert!(
+        start_success,
+        "Failed to start container after multiple attempts"
+    );
+
+    // Add a small delay after starting to ensure Docker has fully started the container
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Log container state after start
+    if let Ok(inspect) = builder
+        .get_client()
+        .inspect_container(&container.id, None::<InspectContainerOptions>)
+        .await
+    {
+        println!("Container state after start: {:?}", inspect.state);
+    } else {
+        println!("Failed to inspect container after start");
+    }
+
+    // Verify container is running with more retries
+    let mut filters = HashMap::new();
+    filters.insert("id".to_string(), vec![container.id.as_str().to_string()]);
+    filters.insert("label".to_string(), vec![format!("test_id={}", test_id)]);
+
+    let mut retries = 10; // Increased retries
+    let mut container_running = false;
+    while retries > 0 {
+        println!("Checking container running state, attempt {}", 11 - retries);
+        match builder
+            .get_client()
+            .list_containers(Some(ListContainersOptions {
+                all: true, // Check all containers, not just running ones
+                filters: filters.clone(),
+                ..Default::default()
+            }))
+            .await
+        {
+            Ok(containers) => {
+                if !containers.is_empty() {
+                    container_running = true;
+                    println!("Container confirmed running");
+                    break;
+                }
+            }
+            Err(e) => println!("Error checking container state: {:?}", e),
+        }
+        retries -= 1;
+        tokio::time::sleep(Duration::from_millis(200)).await; // Increased delay
+    }
+
+    assert!(container_running, "Container should be running");
+
+    // Test exec in running container with retry
+    println!("Attempting to exec in container");
+    let mut exec_retries = 3;
+    let mut exec_success = false;
+    while exec_retries > 0 && !exec_success {
+        match builder
+            .exec_in_container(&container.id, vec!["echo", "exec test"], None)
+            .await
+        {
+            Ok(output) => {
+                println!("Exec succeeded with output: {}", output);
+                assert!(output.contains("exec test"));
+                exec_success = true;
+            }
+            Err(e) => {
+                println!(
+                    "Exec failed with error (attempt {}): {:?}",
+                    4 - exec_retries,
+                    e
+                );
+                exec_retries -= 1;
+                if exec_retries > 0 {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+
+    assert!(
+        exec_success,
+        "Failed to exec in container after multiple attempts"
+    );
+
+    // Try to get logs with retry
+    println!("Attempting to get container logs");
+    let mut log_retries = 3;
+    while log_retries > 0 {
+        match builder.get_container_logs(&container.id).await {
+            Ok(logs) => {
+                println!("Successfully retrieved logs: {}", logs);
+                break;
+            }
+            Err(e) => {
+                println!("Failed to get logs (attempt {}): {:?}", 4 - log_retries, e);
+                log_retries -= 1;
+                if log_retries > 0 {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+});

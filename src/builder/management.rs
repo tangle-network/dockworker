@@ -1,204 +1,213 @@
+use crate::DockerBuilder;
 use crate::error::DockerError;
 use bollard::container::LogsOptions;
 use bollard::exec::{CreateExecOptions, StartExecOptions};
 use bollard::network::CreateNetworkOptions;
-use bollard::secret::{Ipam, IpamConfig, NetworkCreateResponse};
 use bollard::volume::{CreateVolumeOptions, ListVolumesOptions};
-use futures_util::TryStreamExt;
-use ipnet::{IpNet, Ipv4Net};
+use futures_util::{StreamExt, TryStreamExt};
 use std::collections::HashMap;
-use std::net::Ipv4Addr;
-use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
 
-use super::DockerBuilder;
-
-// Network Management
 impl DockerBuilder {
-    pub async fn find_available_subnet(&self) -> Result<(String, String), DockerError> {
-        let networks = self.client.list_networks::<String>(None).await?;
-        let used_subnets: Vec<IpNet> = networks
-            .iter()
-            .filter_map(|n| n.ipam.as_ref())
-            .filter_map(|ipam| ipam.config.as_ref())
-            .flatten()
-            .filter_map(|config| config.subnet.as_ref())
-            .filter_map(|s| s.parse().ok())
-            .collect();
-
-        // Try different private network ranges
-        let ranges = [
-            (Ipv4Addr::new(10, 0, 0, 0), 8),     // 10.0.0.0/8
-            (Ipv4Addr::new(172, 16, 0, 0), 12),  // 172.16.0.0/12
-            (Ipv4Addr::new(192, 168, 0, 0), 16), // 192.168.0.0/16
-        ];
-
-        for (base_addr, prefix_len) in ranges {
-            // Try subdividing the network into /24 subnets
-            for third_octet in 0..=255 {
-                let subnet_addr =
-                    Ipv4Addr::new(base_addr.octets()[0], base_addr.octets()[1], third_octet, 0);
-
-                let subnet = Ipv4Net::new(subnet_addr, 24).map_err(|e| {
-                    DockerError::NetworkCreationError(format!("Invalid subnet: {}", e))
-                })?;
-                let subnet_net = IpNet::V4(subnet);
-
-                // Check for overlaps
-                if !used_subnets.iter().any(|used| {
-                    used.contains(&subnet_net.addr()) || subnet_net.contains(&used.addr())
-                }) {
-                    // Use the first available host address as gateway
-                    let gateway = Ipv4Addr::new(
-                        subnet_addr.octets()[0],
-                        subnet_addr.octets()[1],
-                        subnet_addr.octets()[2],
-                        1,
-                    );
-
-                    return Ok((subnet.to_string(), gateway.to_string()));
-                }
-            }
-        }
-
-        Err(DockerError::NetworkCreationError(
-            "No available subnet found".to_string(),
-        ))
-    }
-
-    pub async fn create_network(
-        &self,
-        name: &str,
-        subnet: &str,
-        gateway: &str,
-    ) -> Result<NetworkCreateResponse, DockerError> {
-        // Validate subnet format
-        let subnet_net = IpNet::from_str(subnet).map_err(|e| {
-            DockerError::NetworkCreationError(format!("Invalid subnet format: {}", e))
-        })?;
-
-        // Validate gateway is within subnet
-        let gateway_ip = std::net::IpAddr::from_str(gateway).map_err(|e| {
-            DockerError::NetworkCreationError(format!("Invalid gateway format: {}", e))
-        })?;
-        if !subnet_net.contains(&gateway_ip) {
-            return Err(DockerError::NetworkCreationError(
-                "Gateway must be within subnet range".to_string(),
-            ));
-        }
-
-        // Check for existing networks with same name
-        let networks = self.list_networks().await?;
-        if networks.contains(&name.to_string()) {
-            return Err(DockerError::NetworkCreationError(format!(
-                "Network {} already exists",
-                name
-            )));
-        }
-
-        let ipam = Ipam {
-            driver: Some("default".to_string()),
-            config: Some(vec![IpamConfig {
-                subnet: Some(subnet.to_string()),
-                gateway: Some(gateway.to_string()),
-                ip_range: None,
-                auxiliary_addresses: None,
-            }]),
-            options: None,
-        };
-
-        self.client
-            .create_network(CreateNetworkOptions {
-                name,
-                driver: "bridge",
-                ipam,
-                check_duplicate: true,
-                internal: false,
-                attachable: true,
-                ingress: false,
-                ..Default::default()
-            })
-            .await
-            .map_err(|e| {
-                if e.to_string().contains("Pool overlaps") {
-                    DockerError::NetworkCreationError(
-                        "Subnet overlaps with existing network".into(),
-                    )
-                } else {
-                    DockerError::BollardError(e)
-                }
-            })
-    }
-
+    /// Network management functions for creating, removing and managing Docker networks
+    ///
+    /// These functions provide retry capabilities and error handling for network operations:
+    /// - Creating networks with configurable retry policies
+    /// - Removing networks
+    /// - Managing network labels and configurations
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use std::time::Duration;
+    /// # use std::collections::HashMap;
+    /// # use dockworker::{DockerBuilder, DockerError};
+    /// # async fn example(builder: DockerBuilder) -> Result<(), DockerError> {
+    /// // Create a network with retries
+    /// let mut labels = HashMap::new();
+    /// labels.insert("env".to_string(), "prod".to_string());
+    ///
+    /// builder.create_network_with_retry(
+    ///     "my-network",
+    ///     3,
+    ///     Duration::from_secs(1),
+    ///     Some(labels)
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn create_network_with_retry(
         &self,
         name: &str,
-        max_retries: usize,
+        max_retries: u32,
         initial_delay: Duration,
-    ) -> Result<NetworkCreateResponse, DockerError> {
+        labels: Option<HashMap<String, String>>,
+    ) -> Result<(), DockerError> {
         let mut delay = initial_delay;
-        let mut last_error = None;
+        let mut attempts = 0;
 
-        for attempt in 0..max_retries {
-            match self.find_available_subnet().await {
-                Ok((subnet, gateway)) => {
-                    match self.create_network(name, &subnet, &gateway).await {
-                        Ok(response) => return Ok(response),
-                        Err(e) => {
-                            last_error = Some(e);
-                            if attempt < max_retries - 1 {
-                                sleep(delay).await;
-                                delay *= 2; // Exponential backoff
-                                continue;
-                            }
-                        }
-                    }
-                }
+        while attempts < max_retries {
+            let result = self
+                .get_client()
+                .create_network(CreateNetworkOptions {
+                    name: name.to_string(),
+                    driver: "bridge".to_string(),
+                    labels: labels.clone().unwrap_or_default(),
+                    ..Default::default()
+                })
+                .await;
+
+            match result {
+                Ok(_) => return Ok(()),
                 Err(e) => {
-                    last_error = Some(e);
-                    if attempt < max_retries - 1 {
-                        sleep(delay).await;
-                        delay *= 2;
-                        continue;
+                    if attempts == max_retries - 1 {
+                        return Err(DockerError::BollardError(e));
                     }
+                    attempts += 1;
+                    sleep(delay).await;
+                    delay *= 2;
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| {
-            DockerError::NetworkCreationError("Failed to create network after retries".into())
-        }))
+        Ok(())
     }
 
+    /// Removes a Docker network with the specified name
+    ///
+    /// This method attempts to remove a Docker network by its name. It will fail if the network
+    /// does not exist or if there are containers still connected to it.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the network to remove
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing unit `()` on success, or a `DockerError` if removal fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// builder.remove_network("my-network").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn remove_network(&self, name: &str) -> Result<(), DockerError> {
-        // Check if network exists before trying to remove it
-        let networks = self.list_networks().await?;
-        if !networks.contains(&name.to_string()) {
-            return Ok(());
-        }
-
-        self.client
+        self.get_client()
             .remove_network(name)
             .await
             .map_err(DockerError::BollardError)
     }
 
+    /// Pulls a Docker image with optional platform specification
+    ///
+    /// This method attempts to pull a Docker image from a registry. It supports specifying
+    /// a target platform for multi-architecture images.
+    ///
+    /// # Arguments
+    ///
+    /// * `image` - Name of the image to pull (e.g., "ubuntu:latest")
+    /// * `platform` - Optional platform specification (e.g., "linux/amd64", "linux/arm64")
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing unit `()` on success, or a `DockerError` if the pull fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    ///
+    /// // Pull with default platform
+    /// builder.pull_image("ubuntu:latest", None).await?;
+    ///
+    /// // Pull with specific platform
+    /// builder.pull_image("ubuntu:latest", Some("linux/arm64")).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn pull_image(&self, image: &str, platform: Option<&str>) -> Result<(), DockerError> {
+        let mut pull_stream = self.client.create_image(
+            Some(bollard::image::CreateImageOptions {
+                from_image: image,
+                platform: platform.unwrap_or("linux/amd64"),
+                ..Default::default()
+            }),
+            None,
+            None,
+        );
+
+        while let Some(pull_result) = pull_stream.next().await {
+            match pull_result {
+                Ok(_) => continue,
+                Err(e) => return Err(DockerError::BollardError(e)),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Lists all Docker networks
+    ///
+    /// This method retrieves a list of all Docker networks present on the system.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a `Vec<String>` of network names on success, or a `DockerError` if the operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// let networks = builder.list_networks().await?;
+    /// for network in networks {
+    ///     println!("Found network: {}", network);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn list_networks(&self) -> Result<Vec<String>, DockerError> {
         let networks = self
-            .client
+            .get_client()
             .list_networks::<String>(None)
             .await
             .map_err(DockerError::BollardError)?;
 
         Ok(networks.into_iter().filter_map(|n| n.name).collect())
     }
-}
 
-// Volume Management
-impl DockerBuilder {
+    /// Creates a Docker volume with the specified name
+    ///
+    /// This method creates a new Docker volume with the given name using the local driver.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name to assign to the new volume
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful volume creation, or a `DockerError` if creation fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// builder.create_volume("my_volume").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn create_volume(&self, name: &str) -> Result<(), DockerError> {
-        self.client
+        self.get_client()
             .create_volume(CreateVolumeOptions {
                 name,
                 driver: "local",
@@ -210,16 +219,60 @@ impl DockerBuilder {
         Ok(())
     }
 
+    /// Removes a Docker volume with the specified name
+    ///
+    /// This method removes an existing Docker volume with the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the volume to remove
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful volume removal, or a `DockerError` if removal fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// builder.remove_volume("my_volume").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn remove_volume(&self, name: &str) -> Result<(), DockerError> {
-        self.client
+        self.get_client()
             .remove_volume(name, None)
             .await
             .map_err(DockerError::BollardError)
     }
 
+    /// Lists all Docker volumes with optional filters
+    ///
+    /// This method retrieves a list of all Docker volumes on the system, with optional filtering
+    /// capabilities.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a vector of volume names as strings, or a `DockerError` if the operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// let volumes = builder.list_volumes().await?;
+    /// for volume in volumes {
+    ///     println!("Found volume: {}", volume);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn list_volumes(&self) -> Result<Vec<String>, DockerError> {
         let volumes = self
-            .client
+            .get_client()
             .list_volumes(None::<ListVolumesOptions<String>>)
             .await
             .map_err(DockerError::BollardError)?;
@@ -231,13 +284,84 @@ impl DockerBuilder {
             .filter_map(|v| Some(v.name))
             .collect())
     }
-}
 
-// Container Logs and Exec
-impl DockerBuilder {
+    /// Waits for a container to be in a running state
+    ///
+    /// This method polls the container status until it is running or the maximum number of retries
+    /// is reached. It will retry up to 5 times with a 500ms delay between attempts.
+    ///
+    /// # Arguments
+    ///
+    /// * `container_id` - ID of the container to wait for
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the container is running, or a `DockerError` if the container fails to start
+    /// after maximum retries.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// builder.wait_for_container("container_id").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn wait_for_container(&self, container_id: &str) -> Result<(), DockerError> {
+        let mut retries = 5;
+        while retries > 0 {
+            let inspect = self
+                .get_client()
+                .inspect_container(container_id, None)
+                .await
+                .map_err(DockerError::BollardError)?;
+
+            if let Some(state) = inspect.state {
+                if let Some(running) = state.running {
+                    if running {
+                        return Ok(());
+                    }
+                }
+            }
+            sleep(Duration::from_millis(500)).await;
+            retries -= 1;
+        }
+        Err(DockerError::ValidationError(format!(
+            "Container {} not running after retries",
+            container_id
+        )))
+    }
+
+    /// Retrieves logs from a Docker container
+    ///
+    /// This method fetches both stdout and stderr logs from the specified container with timestamps.
+    /// The logs are returned as a single string with each log line separated by newlines.
+    ///
+    /// # Arguments
+    ///
+    /// * `container_id` - ID of the container to get logs from
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(String)` containing the container logs, or a `DockerError` if there was an error
+    /// retrieving the logs.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// let logs = builder.get_container_logs("container_id").await?;
+    /// println!("Container logs: {}", logs);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get_container_logs(&self, container_id: &str) -> Result<String, DockerError> {
         let mut output = String::new();
-        let mut stream = self.client.logs(
+        let mut stream = self.get_client().logs(
             container_id,
             Some(LogsOptions::<String> {
                 stdout: true,
@@ -264,7 +388,7 @@ impl DockerBuilder {
         env: Option<HashMap<String, String>>,
     ) -> Result<String, DockerError> {
         let exec = self
-            .client
+            .get_client()
             .create_exec(container_id, CreateExecOptions::<String> {
                 attach_stdout: Some(true),
                 attach_stderr: Some(true),
@@ -276,7 +400,7 @@ impl DockerBuilder {
             .map_err(DockerError::BollardError)?;
 
         let output = self
-            .client
+            .get_client()
             .start_exec(&exec.id, None::<StartExecOptions>)
             .await
             .map_err(DockerError::BollardError)?;
@@ -293,27 +417,5 @@ impl DockerBuilder {
             }
             _ => Ok(String::new()),
         }
-    }
-
-    pub async fn wait_for_container(&self, container_id: &str) -> Result<(), DockerError> {
-        let mut retries = 5;
-        while retries > 0 {
-            let inspect = self
-                .client
-                .inspect_container(container_id, None)
-                .await
-                .map_err(DockerError::BollardError)?;
-
-            if let Some(state) = inspect.state {
-                if let Some(running) = state.running {
-                    if running {
-                        return Ok(());
-                    }
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            retries -= 1;
-        }
-        Err(DockerError::ContainerNotRunning(container_id.to_string()))
     }
 }

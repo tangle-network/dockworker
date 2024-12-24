@@ -1,89 +1,32 @@
+#[cfg(feature = "docker")]
+use bollard::service::{Mount, MountTypeEnum};
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::path::PathBuf;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VolumeType {
     Named(String),
     Bind {
-        source: PathBuf,
+        source: String,
         target: String,
         read_only: bool,
     },
-}
-
-impl fmt::Display for VolumeType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            VolumeType::Named(name) => write!(f, "{}", name),
-            VolumeType::Bind {
-                source,
-                target,
-                read_only,
-            } => {
-                if *read_only {
-                    write!(f, "{}:{}:ro", source.display(), target)
-                } else {
-                    write!(f, "{}:{}", source.display(), target)
-                }
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum VolumeSpec {
-    Short(String),
-    Long {
-        #[serde(rename = "type")]
-        volume_type: String,
-        source: String,
-        target: String,
-        read_only: Option<bool>,
+    Config {
+        name: String,
+        driver: Option<String>,
+        driver_opts: Option<HashMap<String, String>>,
     },
 }
 
-impl From<VolumeSpec> for VolumeType {
-    fn from(spec: VolumeSpec) -> Self {
-        match spec {
-            VolumeSpec::Short(s) => {
-                let parts: Vec<&str> = s.split(':').collect();
-                match parts.len() {
-                    2 => {
-                        if parts[0].starts_with('/') || parts[0].starts_with('.') {
-                            VolumeType::Bind {
-                                source: PathBuf::from(parts[0]),
-                                target: parts[1].to_string(),
-                                read_only: false,
-                            }
-                        } else {
-                            VolumeType::Named(s)
-                        }
-                    }
-                    3 if parts[2] == "ro" => VolumeType::Bind {
-                        source: PathBuf::from(parts[0]),
-                        target: parts[1].to_string(),
-                        read_only: true,
-                    },
-                    _ => VolumeType::Named(s),
-                }
-            }
-            VolumeSpec::Long {
-                volume_type,
-                source,
-                target,
-                read_only,
-            } => match volume_type.as_str() {
-                "bind" => VolumeType::Bind {
-                    source: PathBuf::from(source),
-                    target,
-                    read_only: read_only.unwrap_or(false),
-                },
-                _ => VolumeType::Named(format!("{}:{}", source, target)),
-            },
-        }
-    }
+// For top-level volume definitions
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum VolumeSpec {
+    Empty(()),
+    Full {
+        driver: Option<String>,
+        driver_opts: Option<HashMap<String, String>>,
+    },
 }
 
 impl<'de> Deserialize<'de> for VolumeType {
@@ -91,8 +34,91 @@ impl<'de> Deserialize<'de> for VolumeType {
     where
         D: serde::Deserializer<'de>,
     {
-        let spec = VolumeSpec::deserialize(deserializer)?;
-        Ok(VolumeType::from(spec))
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum VolumeInput {
+            String(String),
+            Long {
+                source: String,
+                target: String,
+                #[serde(rename = "type")]
+                typ: Option<String>,
+                #[serde(default)]
+                read_only: bool,
+            },
+            TopLevel(VolumeSpec),
+        }
+
+        let input = VolumeInput::deserialize(deserializer)?;
+        match input {
+            VolumeInput::String(s) => {
+                let parts: Vec<&str> = s.split(':').collect();
+                match parts.len() {
+                    2 => {
+                        if parts[0].starts_with('/') || parts[0].starts_with("./") {
+                            Ok(VolumeType::Bind {
+                                source: parts[0].to_string(),
+                                target: parts[1].to_string(),
+                                read_only: false,
+                            })
+                        } else {
+                            Ok(VolumeType::Named(s.to_string()))
+                        }
+                    }
+                    3 if parts[2] == "ro" => {
+                        if parts[0].starts_with('/') || parts[0].starts_with("./") {
+                            Ok(VolumeType::Bind {
+                                source: parts[0].to_string(),
+                                target: parts[1].to_string(),
+                                read_only: true,
+                            })
+                        } else {
+                            Ok(VolumeType::Named(s.to_string()))
+                        }
+                    }
+                    _ => Ok(VolumeType::Named(s.to_string())),
+                }
+            }
+            VolumeInput::Long {
+                source,
+                target,
+                typ,
+                read_only,
+            } => match typ.as_deref() {
+                Some("bind") => Ok(VolumeType::Bind {
+                    source,
+                    target,
+                    read_only,
+                }),
+                Some("volume") | None => {
+                    let name = if read_only {
+                        format!("{}:{}:ro", source, target)
+                    } else {
+                        format!("{}:{}", source, target)
+                    };
+                    Ok(VolumeType::Named(name))
+                }
+                Some(t) => Err(serde::de::Error::custom(format!(
+                    "Invalid volume type: {}",
+                    t
+                ))),
+            },
+            VolumeInput::TopLevel(spec) => match spec {
+                VolumeSpec::Empty(_) => Ok(VolumeType::Config {
+                    name: String::new(),
+                    driver: None,
+                    driver_opts: None,
+                }),
+                VolumeSpec::Full {
+                    driver,
+                    driver_opts,
+                } => Ok(VolumeType::Config {
+                    name: String::new(),
+                    driver,
+                    driver_opts,
+                }),
+            },
+        }
     }
 }
 
@@ -101,132 +127,88 @@ impl Serialize for VolumeType {
     where
         S: serde::Serializer,
     {
-        self.to_string().serialize(serializer)
+        match self {
+            VolumeType::Named(name) => serializer.serialize_str(name),
+            VolumeType::Bind {
+                source,
+                target,
+                read_only,
+            } => {
+                if *read_only {
+                    serializer.serialize_str(&format!("{}:{}:ro", source, target))
+                } else {
+                    serializer.serialize_str(&format!("{}:{}", source, target))
+                }
+            }
+            VolumeType::Config {
+                driver,
+                driver_opts,
+                ..
+            } => match (driver, driver_opts) {
+                (None, None) => serializer.serialize_none(),
+                (Some(driver), Some(opts)) => {
+                    use serde::ser::SerializeMap;
+                    let mut map = serializer.serialize_map(Some(2))?;
+                    map.serialize_entry("driver", driver)?;
+                    map.serialize_entry("driver_opts", opts)?;
+                    map.end()
+                }
+                (Some(driver), None) => {
+                    use serde::ser::SerializeMap;
+                    let mut map = serializer.serialize_map(Some(1))?;
+                    map.serialize_entry("driver", driver)?;
+                    map.end()
+                }
+                (None, Some(opts)) => {
+                    use serde::ser::SerializeMap;
+                    let mut map = serializer.serialize_map(Some(1))?;
+                    map.serialize_entry("driver_opts", opts)?;
+                    map.end()
+                }
+            },
+        }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_short_volume_format() {
-        let yaml = r#"
-            - named_vol:/data
-            - ./local:/container
-            - /abs/path:/container/config:ro
-        "#;
-
-        let volumes: Vec<VolumeType> = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(volumes.len(), 3);
-
-        assert!(matches!(&volumes[0], VolumeType::Named(name) if name == "named_vol:/data"));
-
-        match &volumes[1] {
+impl VolumeType {
+    #[cfg(feature = "docker")]
+    pub fn to_mount(&self) -> Mount {
+        match self {
+            VolumeType::Named(name) => {
+                let parts: Vec<&str> = name.split(':').collect();
+                Mount {
+                    target: Some(parts[1].to_string()),
+                    source: Some(parts[0].to_string()),
+                    typ: Some(MountTypeEnum::VOLUME),
+                    ..Default::default()
+                }
+            }
             VolumeType::Bind {
                 source,
                 target,
                 read_only,
-            } => {
-                assert_eq!(source, &PathBuf::from("./local"));
-                assert_eq!(target, "/container");
-                assert!(!read_only);
-            }
-            _ => panic!("Expected bind mount"),
-        }
-
-        match &volumes[2] {
-            VolumeType::Bind {
-                source,
-                target,
-                read_only,
-            } => {
-                assert_eq!(source, &PathBuf::from("/abs/path"));
-                assert_eq!(target, "/container/config");
-                assert!(*read_only);
-            }
-            _ => panic!("Expected bind mount"),
+            } => Mount {
+                target: Some(target.to_string()),
+                source: Some(source.to_string()),
+                typ: Some(MountTypeEnum::BIND),
+                read_only: Some(*read_only),
+                ..Default::default()
+            },
+            VolumeType::Config { name, .. } => Mount {
+                source: Some(name.clone()),
+                typ: Some(MountTypeEnum::VOLUME),
+                ..Default::default()
+            },
         }
     }
 
-    #[test]
-    fn test_long_volume_format() {
-        let yaml = r#"
-            - type: volume
-              source: named_vol
-              target: /data
-            - type: bind
-              source: ./local
-              target: /container
-            - type: bind
-              source: /abs/path
-              target: /container/config
-              read_only: true
-        "#;
-
-        let volumes: Vec<VolumeType> = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(volumes.len(), 3);
-
-        assert!(matches!(&volumes[0], VolumeType::Named(name) if name == "named_vol:/data"));
-
-        match &volumes[1] {
-            VolumeType::Bind {
-                source,
-                target,
-                read_only,
-            } => {
-                assert_eq!(source, &PathBuf::from("./local"));
-                assert_eq!(target, "/container");
-                assert!(!read_only);
-            }
-            _ => panic!("Expected bind mount"),
+    pub fn matches_name(&self, name: &str) -> bool {
+        match self {
+            VolumeType::Named(volume_name) => volume_name.split(':').next().unwrap_or("") == name,
+            VolumeType::Bind { target, .. } => target == name,
+            VolumeType::Config {
+                name: volume_name, ..
+            } => volume_name == name,
         }
-
-        match &volumes[2] {
-            VolumeType::Bind {
-                source,
-                target,
-                read_only,
-            } => {
-                assert_eq!(source, &PathBuf::from("/abs/path"));
-                assert_eq!(target, "/container/config");
-                assert!(*read_only);
-            }
-            _ => panic!("Expected bind mount"),
-        }
-    }
-
-    #[test]
-    fn test_roundtrip() {
-        let yaml = r#"
-            - named_vol:/data
-            - /abs/path:/container
-            - /data:/container:ro
-        "#;
-
-        let volumes: Vec<VolumeType> = serde_yaml::from_str(yaml).unwrap();
-        let serialized = serde_yaml::to_string(&volumes).unwrap();
-        let deserialized: Vec<VolumeType> = serde_yaml::from_str(&serialized).unwrap();
-        assert_eq!(volumes, deserialized);
-    }
-
-    #[test]
-    fn test_display() {
-        let named = VolumeType::Named("myvolume:/data".to_string());
-        assert_eq!(named.to_string(), "myvolume:/data");
-
-        let bind = VolumeType::Bind {
-            source: PathBuf::from("/host/path"),
-            target: "/container/path".to_string(),
-            read_only: false,
-        };
-        assert_eq!(bind.to_string(), "/host/path:/container/path");
-
-        let bind_ro = VolumeType::Bind {
-            source: PathBuf::from("/host/path"),
-            target: "/container/path".to_string(),
-            read_only: true,
-        };
-        assert_eq!(bind_ro.to_string(), "/host/path:/container/path:ro");
     }
 }

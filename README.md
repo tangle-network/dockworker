@@ -1,32 +1,39 @@
 # Dockworker
 
-A Rust library for converting Dockerfile and Docker Compose configurations into programmatic container deployments using Bollard.
+A high-performance Rust library for programmatic container orchestration, offering type-safe Docker and Docker Compose operations with advanced deployment capabilities.
 
-## Features
+## Overview
 
-- **Dockerfile Parsing & Deployment**
+Dockworker bridges the gap between static container configurations and dynamic runtime orchestration. It provides a robust, type-safe interface for programmatically managing containers, with first-class support for both Dockerfile and Docker Compose workflows.
 
-  - Full support for all Dockerfile commands
-  - Intelligent parsing of multi-line commands
-  - JSON and shell syntax support
-  - Resource limit configuration
-  - Health check management
+## Key Features
 
-- **Docker Compose Support**
+### 🔒 Type-Safe Container Orchestration
 
-  - YAML configuration parsing
-  - Network management with IPAM
-  - Volume management
-  - Service dependencies
-  - Resource constraints
-  - Health checks
+- **Compile-time Validation**: Catch configuration errors before deployment with Rust's type system
+- **Safe API Abstractions**: Memory-safe wrappers around Docker Engine API
+- **Error Recovery**: Structured error handling with automatic cleanup and rollback capabilities
 
-- **Container Management**
-  - Container lifecycle management
-  - Log retrieval
-  - Exec support
-  - Network creation and cleanup
-  - Volume management
+### 🚀 Advanced Deployment Capabilities
+
+- **Intelligent Build Context**: Automatic dependency tracking and efficient layer caching
+- **Variable Substitution**: Advanced environment variable interpolation with fallback support
+- **Resource Management**: Fine-grained control over CPU, memory, and network resources
+- **Health Monitoring**: Sophisticated health check system with customizable probes
+
+### 🔄 Docker Compose Integration
+
+- **Declarative & Programmatic**: Use YAML configs or build service definitions in code
+- **Dependency Resolution**: Automatic service ordering based on dependency graphs
+- **Network Isolation**: Automatic network creation and service discovery
+- **Volume Management**: Type-safe volume mounting with automatic cleanup
+
+### 🛠 Developer Experience
+
+- **Async-first Design**: Built on `tokio` for high-performance async I/O
+- **Modular Architecture**: Use only what you need with feature flags
+- **Comprehensive Logging**: Detailed operation logging for debugging
+- **Testing Utilities**: Rich testing infrastructure for container-based tests
 
 ## Installation
 
@@ -35,7 +42,7 @@ Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 # For parsing only (no deployment features)
-dockworker = { version = "0.1.0", default-features = false, features = ["parser"] }
+dockworker = { version = "0.1.0" }
 
 # For full functionality including deployment (default)
 dockworker = "0.1.0"
@@ -139,7 +146,7 @@ use dockworker::{Service, ResourceLimits};
 
 let service = Service {
     image: Some("nginx:latest".to_string()),
-    resources: Some(ResourceLimits {
+    requirements: Some(ResourceLimits {
         cpu_limit: Some(0.5),                        // Half a CPU
         memory_limit: Some("512M".to_string()),      // 512MB memory limit
         memory_swap: Some("1G".to_string()),         // 1GB swap limit

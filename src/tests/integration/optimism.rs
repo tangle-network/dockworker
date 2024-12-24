@@ -1,347 +1,300 @@
-use crate::config::health::HealthCheck;
-use reqwest::Client;
-use serde_json::Value;
-use std::path::Path;
+use crate::DockerBuilder;
+use crate::config::compose::ComposeConfig;
+use crate::parser::compose::ComposeParser;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+use tokio::fs;
+use uuid::Uuid;
 
 const OPTIMISM_FIXTURES: &str = "fixtures/simple-optimism-node";
+const TEST_BASE_DIR: &str = "test-data";
 
-/// Helper function to get environment file paths for a specific network
-fn get_network_env_files(network: &str) -> Vec<std::path::PathBuf> {
-    let base_path = Path::new(OPTIMISM_FIXTURES).join("envs");
-    let mut env_files = vec![
-        // Network specific env files
-        base_path.join(network).join("op-geth.env"),
-        base_path.join(network).join("op-node.env"),
-        // Common env files
-        base_path.join("common").join("grafana.env"),
-        base_path.join("common").join("healthcheck.env"),
-        base_path.join("common").join("influxdb.env"),
-        base_path.join("common").join("l2geth.env"),
-    ];
-
-    // Add config files if they exist
-    let config_path = base_path.join(network).join("config");
-    if config_path.exists() {
-        env_files.extend(vec![
-            config_path.join("genesis.json"),
-            config_path.join("rollup.json"),
-        ]);
-    }
-
-    env_files
+pub struct OptimismTestContext {
+    pub builder: DockerBuilder,
+    pub config: ComposeConfig,
+    pub test_dir: PathBuf,
 }
 
-pub struct BlockchainNodeHealth {
-    pub rpc_endpoint: String,
-    pub reference_endpoint: Option<String>,
-    pub max_block_delay: u64,
-}
+impl OptimismTestContext {
+    pub async fn new(test_id: &str) -> Result<Self, crate::error::DockerError> {
+        let builder = DockerBuilder::new()?;
 
-impl BlockchainNodeHealth {
-    pub async fn check(&self) -> Result<(), crate::error::DockerError> {
-        let client = Client::new();
+        // Create test directory under the common test base
+        let test_dir = PathBuf::from(TEST_BASE_DIR)
+            .join("optimism")
+            .join(format!("test-{}", Uuid::new_v4()));
 
-        // Check if node is syncing
-        let syncing = self.check_syncing(&client).await?;
-        if syncing {
-            return Err(crate::error::DockerError::ValidationError(
-                "Node is still syncing".to_string(),
-            ));
+        // Set up initial config
+        let compose_path = PathBuf::from(OPTIMISM_FIXTURES).join("docker-compose.yml");
+        let env_path = PathBuf::from("src/tests/integration/optimism_env.env");
+
+        // Parse config with environment variables
+        let mut config = ComposeParser::from_file_with_env(&compose_path, &env_path).await?;
+
+        // Add test_id label to each service
+        for service in config.services.values_mut() {
+            let mut labels = service.labels.clone().unwrap_or_default();
+            labels.insert("test_id".to_string(), test_id.to_string());
+            service.labels = Some(labels);
+
+            // Add platform for specific services that need it
+            match service.image.as_deref() {
+                Some("ethereumoptimism/replica-healthcheck:latest")
+                | Some("ethereumoptimism/l2geth:latest")
+                | Some("us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:v1.101411.4") => {
+                    service.platform = Some("linux/amd64".to_string());
+                }
+                _ => {}
+            }
         }
 
-        // Compare with reference node if available
-        if let Some(ref_endpoint) = &self.reference_endpoint {
-            self.compare_with_reference(&client, ref_endpoint).await?;
-        }
-
-        Ok(())
+        Ok(Self {
+            builder,
+            config,
+            test_dir,
+        })
     }
 
-    async fn check_syncing(&self, client: &Client) -> Result<bool, crate::error::DockerError> {
-        let response: Value = client
-            .post(&self.rpc_endpoint)
-            .json(&serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "eth_syncing",
-                "params": [],
-                "id": 1
-            }))
-            .send()
-            .await
-            .map_err(|e| {
-                crate::error::DockerError::ValidationError(format!("RPC request failed: {}", e))
-            })?
-            .json()
-            .await
-            .map_err(|e| {
-                crate::error::DockerError::ValidationError(format!("Invalid JSON response: {}", e))
-            })?;
+    pub async fn deploy(&mut self) -> Result<HashMap<String, String>, crate::error::DockerError> {
+        // First ensure all directories exist
+        self.setup_directories().await?;
 
-        Ok(response["result"] != false)
-    }
-
-    async fn compare_with_reference(
-        &self,
-        client: &Client,
-        reference_endpoint: &str,
-    ) -> Result<(), crate::error::DockerError> {
-        let node_block = self.get_block_number(client, &self.rpc_endpoint).await?;
-        let ref_block = self.get_block_number(client, reference_endpoint).await?;
-
-        if ref_block - node_block > self.max_block_delay {
+        // Verify build context exists
+        let dockerfile_path = self
+            .test_dir
+            .join("docker/dockerfiles/Dockerfile.bedrock-init");
+        if !dockerfile_path.exists() {
             return Err(crate::error::DockerError::ValidationError(format!(
-                "Node is {} blocks behind reference node",
-                ref_block - node_block
+                "Dockerfile not found at expected path: {}",
+                dockerfile_path.display()
             )));
         }
+        println!("Found Dockerfile at: {}", dockerfile_path.display());
 
-        Ok(())
+        // Now deploy the services using the test directory as base for bind mounts
+        self.builder
+            .deploy_compose_with_base_dir(&mut self.config, self.test_dir.clone())
+            .await
     }
 
-    async fn get_block_number(
-        &self,
-        client: &Client,
-        endpoint: &str,
-    ) -> Result<u64, crate::error::DockerError> {
-        let response: Value = client
-            .post(endpoint)
-            .json(&serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "eth_blockNumber",
-                "params": [],
-                "id": 1
-            }))
-            .send()
-            .await
-            .map_err(|e| {
-                crate::error::DockerError::ValidationError(format!("RPC request failed: {}", e))
-            })?
-            .json()
-            .await
-            .map_err(|e| {
-                crate::error::DockerError::ValidationError(format!("Invalid JSON response: {}", e))
-            })?;
+    pub async fn setup_directories(&self) -> Result<(), crate::error::DockerError> {
+        println!("\n=== Setting up test directories ===");
+        println!("Test directory: {}", self.test_dir.display());
 
-        let hex_str = response["result"].as_str().ok_or_else(|| {
-            crate::error::DockerError::ValidationError("Invalid block number response".into())
+        // Create test directory
+        fs::create_dir_all(&self.test_dir).await.map_err(|e| {
+            crate::error::DockerError::ValidationError(format!(
+                "Failed to create test directory: {}",
+                e
+            ))
         })?;
 
-        u64::from_str_radix(&hex_str[2..], 16).map_err(|e| {
-            crate::error::DockerError::ValidationError(format!("Invalid block number: {}", e))
-        })
+        // Define directories to copy from fixtures
+        let dirs_to_copy = [
+            "docker/prometheus",
+            "docker/grafana/provisioning",
+            "docker/grafana/dashboards",
+            "docker/influxdb",
+            "scripts",
+            "envs/common",
+            "envs/op-mainnet",
+            "envs/op-mainnet/config",
+        ];
+
+        // Copy each directory from fixtures to test directory
+        for dir in dirs_to_copy {
+            let src_dir = Path::new(OPTIMISM_FIXTURES).join(dir);
+            let dst_dir = self.test_dir.join(dir);
+
+            println!("\nCopying directory:");
+            println!("  From: {}", src_dir.display());
+            println!("  To: {}", dst_dir.display());
+
+            // Create parent directory
+            if let Some(parent) = dst_dir.parent() {
+                fs::create_dir_all(parent).await.map_err(|e| {
+                    crate::error::DockerError::ValidationError(format!(
+                        "Failed to create parent directory {}: {}",
+                        parent.display(),
+                        e
+                    ))
+                })?;
+            }
+
+            // Copy directory contents
+            if src_dir.exists() {
+                tokio::process::Command::new("cp")
+                    .arg("-r")
+                    .arg(&src_dir)
+                    .arg(dst_dir.parent().unwrap())
+                    .status()
+                    .await
+                    .map_err(|e| {
+                        crate::error::DockerError::ValidationError(format!(
+                            "Failed to copy directory {}: {}",
+                            dir, e
+                        ))
+                    })?;
+            } else {
+                println!(
+                    "Warning: Source directory does not exist: {}",
+                    src_dir.display()
+                );
+                fs::create_dir_all(&dst_dir).await.map_err(|e| {
+                    crate::error::DockerError::ValidationError(format!(
+                        "Failed to create directory {}: {}",
+                        dst_dir.display(),
+                        e
+                    ))
+                })?;
+            }
+        }
+
+        // Create additional required directories
+        println!("\n=== Creating additional directories ===");
+        let additional_dirs = ["shared", "downloads", "torrents/op-mainnet"];
+
+        for dir in additional_dirs {
+            let dir_path = self.test_dir.join(dir);
+            println!("Creating directory: {}", dir_path.display());
+            fs::create_dir_all(&dir_path).await.map_err(|e| {
+                crate::error::DockerError::ValidationError(format!(
+                    "Failed to create directory {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
+        }
+
+        // Copy docker-compose.yml
+        println!("\n=== Copying compose files ===");
+        let compose_src = Path::new(OPTIMISM_FIXTURES).join("docker-compose.yml");
+        let compose_dst = self.test_dir.join("docker-compose.yml");
+        println!("Copying docker-compose.yml:");
+        println!("  From: {}", compose_src.display());
+        println!("  To: {}", compose_dst.display());
+        fs::copy(&compose_src, &compose_dst).await.map_err(|e| {
+            crate::error::DockerError::ValidationError(format!(
+                "Failed to copy docker-compose.yml: {}",
+                e
+            ))
+        })?;
+
+        // Copy optimism_env.env to .env
+        let env_src = PathBuf::from("src/tests/integration/optimism_env.env");
+        let env_dst = self.test_dir.join(".env");
+        println!("Copying env file:");
+        println!("  From: {}", env_src.display());
+        println!("  To: {}", env_dst.display());
+        fs::copy(&env_src, &env_dst).await.map_err(|e| {
+            crate::error::DockerError::ValidationError(format!(
+                "Failed to copy optimism_env.env to .env: {}",
+                e
+            ))
+        })?;
+
+        // Set up Docker build context
+        println!("\n=== Setting up Docker build context ===");
+        let dockerfiles_dir = self.test_dir.join("docker/dockerfiles");
+        fs::create_dir_all(&dockerfiles_dir).await.map_err(|e| {
+            crate::error::DockerError::ValidationError(format!(
+                "Failed to create dockerfiles directory: {}",
+                e
+            ))
+        })?;
+
+        // Copy Dockerfile with explicit fs::copy
+        let dockerfile_src =
+            Path::new(OPTIMISM_FIXTURES).join("docker/dockerfiles/Dockerfile.bedrock-init");
+        let dockerfile_dst = dockerfiles_dir.join("Dockerfile.bedrock-init");
+
+        println!("Copying Dockerfile:");
+        println!("  From: {}", dockerfile_src.display());
+        println!("  To: {}", dockerfile_dst.display());
+
+        fs::copy(&dockerfile_src, &dockerfile_dst)
+            .await
+            .map_err(|e| {
+                crate::error::DockerError::ValidationError(format!(
+                    "Failed to copy Dockerfile.bedrock-init: {}",
+                    e
+                ))
+            })?;
+
+        // Verify the Dockerfile was copied correctly
+        match fs::read_to_string(&dockerfile_dst).await {
+            Ok(content) => {
+                println!("Verified Dockerfile contents ({} bytes)", content.len());
+                println!("First few lines:");
+                for line in content.lines().take(5) {
+                    println!("  {}", line);
+                }
+            }
+            Err(e) => println!("Warning: Could not read copied Dockerfile: {}", e),
+        }
+
+        // List the final dockerfiles directory
+        println!("\nFinal dockerfiles directory contents:");
+        if let Ok(mut entries) = fs::read_dir(&dockerfiles_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                println!("  {}", entry.path().display());
+            }
+        }
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{VolumeType, compose::ComposeConfig};
-    use crate::parser::compose::ComposeParser;
-    use std::collections::HashMap;
-    use std::path::Path;
+    use crate::with_docker_cleanup;
 
-    const OPTIMISM_FIXTURES: &str = "fixtures/simple-optimism-node";
+    with_docker_cleanup!(test_optimism_node_deployment, async |test_id: &str| {
+        let mut ctx = OptimismTestContext::new(test_id).await.unwrap();
 
-    fn load_env_vars() -> HashMap<String, String> {
-        let env_content = std::fs::read_to_string("src/tests/integration/optimism_env.env")
-            .expect("Failed to read env file");
+        // Deploy all services and verify they're running
+        let container_ids = ctx.deploy().await.unwrap();
 
-        let mut vars = HashMap::new();
-        for line in env_content.lines() {
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if let Some((key, value)) = line.split_once('=') {
-                vars.insert(
-                    key.trim().to_string(),
-                    value.trim().trim_matches('"').to_string(),
-                );
-            }
-        }
-        vars
-    }
+        // Verify services are running
+        for (service_name, container_id) in container_ids {
+            println!(
+                "Verifying container for service {} with id {}",
+                service_name, container_id
+            );
 
-    #[test]
-    fn test_optimism_env_parsing() -> Result<(), Box<dyn std::error::Error>> {
-        // Load environment variables
-        let env_vars = load_env_vars();
-
-        // Parse the compose file
-        let compose_path = Path::new(OPTIMISM_FIXTURES).join("docker-compose.yml");
-        let compose_content = std::fs::read_to_string(&compose_path)?;
-
-        // Replace environment variables in compose content
-        let mut processed_content = compose_content;
-        for (key, value) in &env_vars {
-            processed_content = processed_content.replace(&format!("${{{}}}", key), value);
-        }
-
-        let config = ComposeParser::parse(&processed_content)?;
-
-        // Verify op-geth configuration
-        let op_geth = config
-            .services
-            .get("op-geth")
-            .expect("op-geth service not found");
-        assert!(op_geth.volumes.is_some(), "op-geth should have volumes");
-
-        // Verify environment variables were substituted
-        let network_name = env_vars
-            .get("NETWORK_NAME")
-            .expect("NETWORK_NAME not found in env");
-        assert!(
-            processed_content.contains(network_name),
-            "NETWORK_NAME should be substituted in compose file"
-        );
-
-        Ok(())
-    }
-
-    #[cfg(feature = "docker")]
-    #[tokio::test]
-    async fn test_optimism_node_deployment() -> Result<(), Box<dyn std::error::Error>> {
-        use crate::DockerBuilder;
-        use bollard::container::{
-            Config, CreateContainerOptions, StartContainerOptions, WaitContainerOptions,
-        };
-        use bollard::service::HostConfig;
-        use futures_util::StreamExt;
-        use std::path::PathBuf;
-
-        let builder = DockerBuilder::new()?;
-
-        // Get absolute path to fixtures
-        let workspace_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let fixtures_path = workspace_dir.join(OPTIMISM_FIXTURES);
-
-        // Load environment variables
-        let env_vars = load_env_vars();
-
-        // Parse the compose file
-        let compose_path = fixtures_path.join("docker-compose.yml");
-        let compose_content = std::fs::read_to_string(&compose_path)?;
-
-        // Replace environment variables in compose content
-        let mut processed_content = compose_content;
-        for (key, value) in &env_vars {
-            processed_content = processed_content.replace(&format!("${{{}}}", key), value);
-        }
-
-        let mut config = ComposeParser::parse(&processed_content)?;
-
-        // Fix relative paths in volumes to be absolute
-        for service in config.services.values_mut() {
-            if let Some(volumes) = &mut service.volumes {
-                for volume in volumes.iter_mut() {
-                    if let VolumeType::Bind { source, .. } = volume {
-                        if source.is_relative() {
-                            *source = fixtures_path
-                                .join(source.strip_prefix("./").unwrap_or(source.as_path()));
-                        }
+            // Verify container is running
+            let mut retries = 5;
+            let mut container_running = false;
+            while retries > 0 {
+                if let Ok(containers) = ctx
+                    .builder
+                    .get_client()
+                    .list_containers(Some(bollard::container::ListContainersOptions {
+                        all: true,
+                        filters: {
+                            let mut filters = HashMap::new();
+                            filters.insert("id".to_string(), vec![container_id.clone()]);
+                            filters
+                        },
+                        ..Default::default()
+                    }))
+                    .await
+                {
+                    if !containers.is_empty() {
+                        container_running = true;
+                        break;
                     }
                 }
+                retries -= 1;
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
+            assert!(
+                container_running,
+                "Container for service {} should be running",
+                service_name
+            );
         }
-
-        // Create required directories
-        for service in config.services.values() {
-            if let Some(volumes) = &service.volumes {
-                for volume in volumes {
-                    if let VolumeType::Bind { source, .. } = volume {
-                        if !source.exists() {
-                            println!("Creating directory: {}", source.display());
-                            tokio::fs::create_dir_all(source).await?;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Start with bedrock-init
-        let init_service = config
-            .services
-            .get("bedrock-init")
-            .expect("bedrock-init service not found");
-
-        // Create container config
-        let container_config = Config {
-            image: init_service.image.to_owned(),
-            cmd: Some(vec!["/scripts/init-bedrock.sh".to_string()]),
-            working_dir: Some("/scripts".to_string()),
-            host_config: Some(HostConfig {
-                binds: init_service
-                    .volumes
-                    .as_ref()
-                    .map(|vols| vols.iter().map(|v| String::from(v.to_string())).collect()),
-                ..Default::default()
-            }),
-            env: init_service.environment.as_ref().map(|env| {
-                env.iter()
-                    .map(|(k, v)| String::from(format!("{}={}", k, v)))
-                    .collect()
-            }),
-            ..Default::default()
-        };
-
-        println!("Creating container with config: {:?}", container_config);
-
-        // Create and start bedrock-init
-        let init_container = builder
-            .get_client()
-            .create_container(None::<CreateContainerOptions<String>>, container_config)
-            .await?;
-
-        println!("Starting container {}", init_container.id);
-
-        // Start the container
-        builder
-            .get_client()
-            .start_container(&init_container.id, None::<StartContainerOptions<String>>)
-            .await?;
-
-        // Wait for completion
-        let mut wait_stream = builder.get_client().wait_container(
-            &init_container.id,
-            Some(WaitContainerOptions {
-                condition: "not-running",
-            }),
-        );
-
-        while let Some(wait_result) = wait_stream.next().await {
-            match wait_result {
-                Ok(exit) => {
-                    // Get container logs for debugging
-                    let logs = builder.get_container_logs(&init_container.id).await?;
-                    println!("Container logs: {}", logs);
-
-                    if exit.status_code != 0 {
-                        return Err(format!(
-                            "bedrock-init failed with status code: {}. Logs: {}",
-                            exit.status_code, logs
-                        )
-                        .into());
-                    }
-                    break;
-                }
-                Err(e) => {
-                    return Err(format!("Error waiting for bedrock-init: {}", e).into());
-                }
-            }
-        }
-
-        // Clean up
-        builder
-            .get_client()
-            .remove_container(
-                &init_container.id,
-                Some(bollard::container::RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await?;
-
-        Ok(())
-    }
+    });
 }

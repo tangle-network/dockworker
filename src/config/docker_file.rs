@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DockerfileConfig {
-    pub(crate) base_image: String,
-    pub(crate) commands: Vec<DockerCommand>,
+    pub base_image: String,
+    pub commands: Vec<DockerCommand>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
