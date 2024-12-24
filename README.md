@@ -35,7 +35,7 @@ Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 # For parsing only (no deployment features)
-dockworker = { version = "0.1.0", default-features = false, features = ["parser"] }
+dockworker = { version = "0.1.0" }
 
 # For full functionality including deployment (default)
 dockworker = "0.1.0"

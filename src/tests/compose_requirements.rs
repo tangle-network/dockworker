@@ -17,7 +17,7 @@ with_docker_cleanup!(test_resource_limits, async |test_id: &str| {
     }
 
     let builder = DockerBuilder::new().unwrap();
-    let network_name = format!("test-network-{}", uuid::Uuid::new_v4());
+    let network_name = format!("test-network-{}", test_id);
 
     let mut network_labels = HashMap::new();
     network_labels.insert("test_id".to_string(), test_id.to_string());

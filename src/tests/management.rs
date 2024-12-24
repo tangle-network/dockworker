@@ -34,7 +34,7 @@ with_docker_cleanup!(test_network_management, async |test_id: &str| {
 
 with_docker_cleanup!(test_volume_management, async |test_id: &str| {
     let builder = DockerBuilder::new().unwrap();
-    let volume_name = format!("test-volume-{}", Uuid::new_v4());
+    let volume_name = format!("test-volume-{}", test_id);
 
     // Create volume
     builder.create_volume(&volume_name).await.unwrap();

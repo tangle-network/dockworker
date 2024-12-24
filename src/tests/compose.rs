@@ -1,6 +1,6 @@
 use crate::{
-    VolumeType, builder::compose::parse_memory_string, tests::docker_file::is_docker_running,
-    with_docker_cleanup,
+    VolumeType, builder::compose::parse_memory_string, parser::ComposeParser,
+    tests::docker_file::is_docker_running, with_docker_cleanup,
 };
 use bollard::container::ListContainersOptions;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
@@ -63,12 +63,10 @@ fn test_compose_parsing() {
     }
 }
 
-with_docker_cleanup!(test_reth_archive_compose_parsing, async |test_id: &str| {
-    let builder = DockerBuilder::new().unwrap();
-    let config = builder
-        .from_compose(get_reth_archive_compose())
-        .await
-        .unwrap();
+#[test]
+fn test_reth_archive_compose_parsing() {
+    let content = std::fs::read_to_string(get_reth_archive_compose()).unwrap();
+    let config = ComposeParser::parse(&content).unwrap();
 
     assert_eq!(config.version, "2");
     assert_eq!(config.services.len(), 2);
@@ -121,14 +119,12 @@ with_docker_cleanup!(test_reth_archive_compose_parsing, async |test_id: &str| {
     assert!(
         matches!(&nimbus_volumes[1], VolumeType::Named(name) if name == "reth_jwt:/jwt/reth:ro")
     );
-});
+}
 
-with_docker_cleanup!(test_local_reth_compose_parsing, async |test_id: &str| {
-    let builder = DockerBuilder::new().unwrap();
-    let config = builder
-        .from_compose(get_local_reth_compose())
-        .await
-        .unwrap();
+#[test]
+fn test_local_reth_compose_parsing() {
+    let content = std::fs::read_to_string(get_local_reth_compose()).unwrap();
+    let config = ComposeParser::parse(&content).unwrap();
 
     assert_eq!(config.version, "3.9");
     assert_eq!(config.services.len(), 3);
@@ -169,7 +165,7 @@ with_docker_cleanup!(test_local_reth_compose_parsing, async |test_id: &str| {
     assert!(config.volumes.contains_key("rethlogs"));
     assert!(config.volumes.contains_key("prometheusdata"));
     assert!(config.volumes.contains_key("grafanadata"));
-});
+}
 
 with_docker_cleanup!(test_compose_deployment, async |test_id: &str| {
     if !is_docker_running() {
@@ -178,7 +174,7 @@ with_docker_cleanup!(test_compose_deployment, async |test_id: &str| {
     }
 
     let builder = DockerBuilder::new().unwrap();
-    let network_name = format!("test-network-{}", uuid::Uuid::new_v4());
+    let network_name = format!("test-network-{}", test_id);
 
     let mut labels = HashMap::new();
     labels.insert("test_id".to_string(), test_id.to_string());
@@ -201,7 +197,7 @@ with_docker_cleanup!(test_compose_deployment, async |test_id: &str| {
     services.insert(service_name, Service {
         image: Some("alpine:latest".to_string()),
         ports: Some(vec!["8080:80".to_string()]),
-        environment: Some(env),
+        environment: Some(env.into()),
         volumes: None,
         networks: Some(vec![network_name.clone()]),
         labels: Some(labels),
@@ -255,7 +251,7 @@ with_docker_cleanup!(test_compose_deployment, async |test_id: &str| {
     }
 });
 
-with_docker_cleanup!(test_compose_with_build, async |test_id: &str| {
+with_docker_cleanup!(test_compose_with_build, async |_: &str| {
     let builder = DockerBuilder::new().unwrap();
 
     // Create a compose config with build context
@@ -277,6 +273,8 @@ with_docker_cleanup!(test_compose_with_build, async |test_id: &str| {
         command: None,
         user: None,
         labels: None,
+        platform: None,
+        env_file: None,
     });
 
     let mut config = ComposeConfig {
@@ -290,7 +288,8 @@ with_docker_cleanup!(test_compose_with_build, async |test_id: &str| {
     assert!(result.is_err());
 });
 
-with_docker_cleanup!(test_volume_validation, async |test_id: &str| {
+#[test]
+fn test_volume_validation() {
     let mut config = ComposeConfig {
         version: "3.8".to_string(),
         services: HashMap::new(),
@@ -322,7 +321,7 @@ with_docker_cleanup!(test_volume_validation, async |test_id: &str| {
 
     // Test validation of missing bind mount targets
     assert!(config.validate_required_volumes(&["/missing"]).is_err());
-});
+}
 
 // Sync tests that don't need Docker cleanup
 #[test]

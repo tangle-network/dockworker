@@ -10,7 +10,32 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 impl DockerBuilder {
-    // Network Management
+    /// Network management functions for creating, removing and managing Docker networks
+    ///
+    /// These functions provide retry capabilities and error handling for network operations:
+    /// - Creating networks with configurable retry policies
+    /// - Removing networks
+    /// - Managing network labels and configurations
+    ///
+    /// # Examples
+    /// ```no_run
+    /// # use std::time::Duration;
+    /// # use std::collections::HashMap;
+    /// # use dockworker::{DockerBuilder, DockerError};
+    /// # async fn example(builder: DockerBuilder) -> Result<(), DockerError> {
+    /// // Create a network with retries
+    /// let mut labels = HashMap::new();
+    /// labels.insert("env".to_string(), "prod".to_string());
+    ///
+    /// builder.create_network_with_retry(
+    ///     "my-network",
+    ///     3,
+    ///     Duration::from_secs(1),
+    ///     Some(labels)
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn create_network_with_retry(
         &self,
         name: &str,
@@ -48,6 +73,29 @@ impl DockerBuilder {
         Ok(())
     }
 
+    /// Removes a Docker network with the specified name
+    ///
+    /// This method attempts to remove a Docker network by its name. It will fail if the network
+    /// does not exist or if there are containers still connected to it.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the network to remove
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing unit `()` on success, or a `DockerError` if removal fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// builder.remove_network("my-network").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn remove_network(&self, name: &str) -> Result<(), DockerError> {
         self.get_client()
             .remove_network(name)
@@ -55,6 +103,35 @@ impl DockerBuilder {
             .map_err(DockerError::BollardError)
     }
 
+    /// Pulls a Docker image with optional platform specification
+    ///
+    /// This method attempts to pull a Docker image from a registry. It supports specifying
+    /// a target platform for multi-architecture images.
+    ///
+    /// # Arguments
+    ///
+    /// * `image` - Name of the image to pull (e.g., "ubuntu:latest")
+    /// * `platform` - Optional platform specification (e.g., "linux/amd64", "linux/arm64")
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing unit `()` on success, or a `DockerError` if the pull fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    ///
+    /// // Pull with default platform
+    /// builder.pull_image("ubuntu:latest", None).await?;
+    ///
+    /// // Pull with specific platform
+    /// builder.pull_image("ubuntu:latest", Some("linux/arm64")).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn pull_image(&self, image: &str, platform: Option<&str>) -> Result<(), DockerError> {
         let mut pull_stream = self.client.create_image(
             Some(bollard::image::CreateImageOptions {
@@ -76,6 +153,27 @@ impl DockerBuilder {
         Ok(())
     }
 
+    /// Lists all Docker networks
+    ///
+    /// This method retrieves a list of all Docker networks present on the system.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a `Vec<String>` of network names on success, or a `DockerError` if the operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// let networks = builder.list_networks().await?;
+    /// for network in networks {
+    ///     println!("Found network: {}", network);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn list_networks(&self) -> Result<Vec<String>, DockerError> {
         let networks = self
             .get_client()
@@ -86,7 +184,28 @@ impl DockerBuilder {
         Ok(networks.into_iter().filter_map(|n| n.name).collect())
     }
 
-    // Volume Management
+    /// Creates a Docker volume with the specified name
+    ///
+    /// This method creates a new Docker volume with the given name using the local driver.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name to assign to the new volume
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful volume creation, or a `DockerError` if creation fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// builder.create_volume("my_volume").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn create_volume(&self, name: &str) -> Result<(), DockerError> {
         self.get_client()
             .create_volume(CreateVolumeOptions {
@@ -100,6 +219,28 @@ impl DockerBuilder {
         Ok(())
     }
 
+    /// Removes a Docker volume with the specified name
+    ///
+    /// This method removes an existing Docker volume with the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the volume to remove
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful volume removal, or a `DockerError` if removal fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// builder.remove_volume("my_volume").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn remove_volume(&self, name: &str) -> Result<(), DockerError> {
         self.get_client()
             .remove_volume(name, None)
@@ -107,6 +248,28 @@ impl DockerBuilder {
             .map_err(DockerError::BollardError)
     }
 
+    /// Lists all Docker volumes with optional filters
+    ///
+    /// This method retrieves a list of all Docker volumes on the system, with optional filtering
+    /// capabilities.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a vector of volume names as strings, or a `DockerError` if the operation fails
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// let volumes = builder.list_volumes().await?;
+    /// for volume in volumes {
+    ///     println!("Found volume: {}", volume);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn list_volumes(&self) -> Result<Vec<String>, DockerError> {
         let volumes = self
             .get_client()
@@ -122,7 +285,30 @@ impl DockerBuilder {
             .collect())
     }
 
-    // Container Management
+    /// Waits for a container to be in a running state
+    ///
+    /// This method polls the container status until it is running or the maximum number of retries
+    /// is reached. It will retry up to 5 times with a 500ms delay between attempts.
+    ///
+    /// # Arguments
+    ///
+    /// * `container_id` - ID of the container to wait for
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` if the container is running, or a `DockerError` if the container fails to start
+    /// after maximum retries.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// builder.wait_for_container("container_id").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn wait_for_container(&self, container_id: &str) -> Result<(), DockerError> {
         let mut retries = 5;
         while retries > 0 {
@@ -148,6 +334,31 @@ impl DockerBuilder {
         )))
     }
 
+    /// Retrieves logs from a Docker container
+    ///
+    /// This method fetches both stdout and stderr logs from the specified container with timestamps.
+    /// The logs are returned as a single string with each log line separated by newlines.
+    ///
+    /// # Arguments
+    ///
+    /// * `container_id` - ID of the container to get logs from
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(String)` containing the container logs, or a `DockerError` if there was an error
+    /// retrieving the logs.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use dockworker::DockerBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let builder = DockerBuilder::new()?;
+    /// let logs = builder.get_container_logs("container_id").await?;
+    /// println!("Container logs: {}", logs);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn get_container_logs(&self, container_id: &str) -> Result<String, DockerError> {
         let mut output = String::new();
         let mut stream = self.get_client().logs(

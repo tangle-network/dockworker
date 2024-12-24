@@ -1,3 +1,4 @@
+#[cfg(feature = "docker")]
 use bollard::service::{Mount, MountTypeEnum};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -21,7 +22,7 @@ pub enum VolumeType {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum VolumeSpec {
-    Empty(Option<()>),
+    Empty(()),
     Full {
         driver: Option<String>,
         driver_opts: Option<HashMap<String, String>>,
@@ -170,6 +171,7 @@ impl Serialize for VolumeType {
 }
 
 impl VolumeType {
+    #[cfg(feature = "docker")]
     pub fn to_mount(&self) -> Mount {
         match self {
             VolumeType::Named(name) => {

@@ -7,6 +7,34 @@ use std::collections::HashMap;
 pub struct DockerfileParser;
 
 impl DockerfileParser {
+    /// A parser for Dockerfile syntax.
+    ///
+    /// This parser reads and interprets Dockerfile commands, converting them into a structured
+    /// [`DockerfileConfig`] representation. It handles basic Dockerfile syntax including:
+    /// - Line continuations with backslash
+    /// - Comments starting with #
+    /// - Basic Dockerfile commands like FROM, COPY, etc.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use dockworker::parser::DockerfileParser;
+    ///
+    /// let content = r#"
+    /// FROM ubuntu:latest
+    /// COPY . /app
+    /// RUN cargo build
+    /// "#;
+    ///
+    /// let config = DockerfileParser::parse(content).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DockerError::DockerfileError`] if:
+    /// - Command syntax is invalid
+    /// - Required arguments are missing
+    /// - Command is not recognized
     pub fn parse(content: &str) -> Result<DockerfileConfig, DockerError> {
         let mut config = DockerfileConfig {
             base_image: String::new(),
