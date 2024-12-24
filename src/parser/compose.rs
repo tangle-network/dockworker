@@ -1,37 +1,181 @@
 use crate::{config::compose::ComposeConfig, error::DockerError};
 use regex::Regex;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use tokio::fs;
 
+/// Parser for Docker Compose configuration files with environment variable support
+///
+/// This parser handles:
+/// - YAML parsing of Docker Compose files
+/// - Environment variable substitution with default values
+/// - Loading and parsing of .env files
+/// - Path normalization
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use std::path::Path;
+/// use dockworker::parser::ComposeParser;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// // Parse a compose file with environment variables from a .env file
+/// let config = ComposeParser::from_file_with_env(
+///     Path::new("docker-compose.yml"),
+///     Path::new(".env")
+/// ).await?;
+///
+/// // Parse a compose file with explicit environment variables
+/// let mut env_vars = std::collections::HashMap::new();
+/// env_vars.insert("VERSION".to_string(), "1.0".to_string());
+/// let config = ComposeParser::from_file_with_env_map(
+///     Path::new("docker-compose.yml"),
+///     &env_vars
+/// ).await?;
+/// # Ok(())
+/// # }
+/// ```
 pub struct ComposeParser;
 
 impl ComposeParser {
-    pub fn parse(content: &str) -> Result<ComposeConfig, DockerError> {
-        let mut config: ComposeConfig =
-            serde_yaml::from_str(content).map_err(DockerError::YamlError)?;
-        config.normalize();
-        Ok(config)
+    /// Parses a Docker Compose file from the given path
+    ///
+    /// This is the simplest way to parse a compose file when no environment
+    /// variable substitution is needed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the Docker Compose file
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the parsed `ComposeConfig` or a `DockerError`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use std::path::Path;
+    /// # use dockworker::parser::ComposeParser;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = ComposeParser::from_file(Path::new("docker-compose.yml")).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn from_file<P: AsRef<Path>>(path: P) -> Result<ComposeConfig, DockerError> {
+        let content = fs::read_to_string(path.as_ref())
+            .await
+            .map_err(DockerError::FileError)?;
+        Self::parse(&content)
     }
 
-    pub fn parse_with_env(content: &str, env_file: &Path) -> Result<ComposeConfig, DockerError> {
-        // First read and parse the env file
-        let env_content =
-            std::fs::read_to_string(env_file).map_err(|e| DockerError::FileError(e))?;
+    /// Parses a Docker Compose file with environment variables from an env file
+    ///
+    /// This method reads both the compose file and an environment file, then
+    /// performs variable substitution before parsing.
+    ///
+    /// # Arguments
+    ///
+    /// * `compose_path` - Path to the Docker Compose file
+    /// * `env_path` - Path to the environment file
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the parsed `ComposeConfig` or a `DockerError`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use std::path::Path;
+    /// # use dockworker::parser::ComposeParser;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = ComposeParser::from_file_with_env(
+    ///     Path::new("docker-compose.yml"),
+    ///     Path::new(".env")
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn from_file_with_env<P: AsRef<Path>>(
+        compose_path: P,
+        env_path: P,
+    ) -> Result<ComposeConfig, DockerError> {
+        let content = fs::read_to_string(compose_path.as_ref())
+            .await
+            .map_err(DockerError::FileError)?;
+        let env_content = fs::read_to_string(env_path.as_ref())
+            .await
+            .map_err(DockerError::FileError)?;
 
         let env_vars = Self::parse_env_file(&env_content)?;
+        let processed_content = Self::substitute_env_vars(&content, &env_vars)?;
 
-        // Substitute environment variables in the content
-        let processed_content = Self::substitute_env_vars(content, &env_vars)?;
-
-        // Parse the processed content
-        let mut config = Self::parse(&processed_content)?;
-        config.normalize();
+        let config = Self::parse(&processed_content)?;
         Ok(config)
     }
 
+    /// Parses a Docker Compose file with environment variables from a HashMap
+    ///
+    /// This method is useful when you want to provide environment variables
+    /// programmatically rather than from a file.
+    ///
+    /// # Arguments
+    ///
+    /// * `compose_path` - Path to the Docker Compose file
+    /// * `env_vars` - HashMap containing environment variable key-value pairs
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the parsed `ComposeConfig` or a `DockerError`
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// # use std::path::Path;
+    /// # use std::collections::HashMap;
+    /// # use dockworker::parser::ComposeParser;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut env_vars = HashMap::new();
+    /// env_vars.insert("VERSION".to_string(), "1.0".to_string());
+    /// let config = ComposeParser::from_file_with_env_map(
+    ///     Path::new("docker-compose.yml"),
+    ///     &env_vars
+    /// ).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn from_file_with_env_map<P: AsRef<Path>>(
+        compose_path: P,
+        env_vars: &HashMap<String, String>,
+    ) -> Result<ComposeConfig, DockerError> {
+        let content = fs::read_to_string(compose_path.as_ref())
+            .await
+            .map_err(DockerError::FileError)?;
+        let processed_content = Self::substitute_env_vars(&content, env_vars)?;
+
+        let config = Self::parse(&processed_content)?;
+        Ok(config)
+    }
+
+    /// Parses a Docker Compose configuration from a string
+    ///
+    /// This is the core parsing method that other methods build upon.
+    /// It handles the basic YAML parsing and normalization.
+    pub fn parse(content: &str) -> Result<ComposeConfig, DockerError> {
+        let config: ComposeConfig =
+            serde_yaml::from_str(content).map_err(DockerError::YamlError)?;
+        Ok(config)
+    }
+
+    /// Parses an environment file into a HashMap of key-value pairs
+    ///
+    /// This method handles:
+    /// - Comments (lines starting with #)
+    /// - Empty lines
+    /// - KEY=value format
+    /// - Quoted values
+    /// - Validation of environment variable names
     fn parse_env_file(content: &str) -> Result<HashMap<String, String>, DockerError> {
         let mut vars = HashMap::new();
-        // Add regex for valid environment variable names
         let valid_key = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
 
         for line in content.lines() {
@@ -42,7 +186,6 @@ impl ComposeParser {
 
             if let Some((key, value)) = line.split_once('=') {
                 let key = key.trim();
-                // Only add if key is valid
                 if valid_key.is_match(key) {
                     vars.insert(key.to_string(), value.trim().trim_matches('"').to_string());
                 }
@@ -52,6 +195,17 @@ impl ComposeParser {
         Ok(vars)
     }
 
+    /// Substitutes environment variables in a string
+    ///
+    /// Supports the following formats:
+    /// - ${VAR}
+    /// - ${VAR:-default}
+    /// - $VAR
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - The string containing environment variable references
+    /// * `env_vars` - HashMap of environment variables to use for substitution
     fn substitute_env_vars(
         content: &str,
         env_vars: &HashMap<String, String>,
@@ -59,7 +213,7 @@ impl ComposeParser {
         let mut result = content.to_string();
 
         // Handle ${VAR:-default} syntax
-        let re_with_default = Regex::new(r"\$\{([^{}:]+):-([^{}]*)\}").unwrap(); // Note the * instead of + for empty defaults
+        let re_with_default = Regex::new(r"\$\{([^{}:]+):-([^{}]*)\}").unwrap();
         result = re_with_default
             .replace_all(&result, |caps: &regex::Captures| {
                 let var_name = caps.get(1).unwrap().as_str();
@@ -99,6 +253,21 @@ impl ComposeParser {
             .to_string();
 
         Ok(result)
+    }
+
+    pub fn parse_with_env(content: &str, env_path: &Path) -> Result<ComposeConfig, DockerError> {
+        // Read environment variables from file
+        let env_content = std::fs::read_to_string(env_path)
+            .map_err(|e| DockerError::ValidationError(format!("Failed to read env file: {}", e)))?;
+
+        // Parse environment variables using existing function
+        let env_vars = Self::parse_env_file(&env_content)?;
+
+        // Substitute environment variables in the content
+        let content = Self::substitute_env_vars(content, &env_vars)?;
+
+        // Parse the content with substituted environment variables
+        Self::parse(&content)
     }
 }
 
@@ -186,7 +355,7 @@ mod tests {
           app:
             image: myapp:${VERSION:-latest}
             deploy:
-              resources:
+              requirements:
                 limits:
                   memory: ${MEMORY:-512M}
                   cpus: ${CPUS:-1.0}

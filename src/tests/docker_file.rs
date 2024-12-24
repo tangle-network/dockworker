@@ -99,7 +99,7 @@ async fn test_dockerfile_deployment() {
 
     // Deploy using our config
     let container_id = builder
-        .deploy_dockerfile(&config, &tag)
+        .deploy_dockerfile(&config, &tag, None, None, None, None)
         .await
         .expect("Failed to deploy Dockerfile");
 

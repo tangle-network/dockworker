@@ -4,7 +4,7 @@ mod docker_file;
 
 // Deployment tests only with deploy feature
 mod compose_health;
-mod compose_resources;
+mod compose_requirements;
 mod fixtures;
 mod integration;
 mod management;

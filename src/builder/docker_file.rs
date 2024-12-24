@@ -1,13 +1,13 @@
-use bollard::container::{Config, CreateContainerOptions, StartContainerOptions};
-use bollard::image::BuildImageOptions;
-use futures_util::StreamExt;
-use std::path::Path;
-use tokio::fs;
-
 use crate::{
     config::docker_file::DockerfileConfig, error::DockerError,
     parser::docker_file::DockerfileParser,
 };
+use bollard::container::{Config, CreateContainerOptions, StartContainerOptions};
+use bollard::image::BuildImageOptions;
+use bollard::service::HostConfig;
+use futures_util::StreamExt;
+use std::path::Path;
+use tokio::fs;
 
 use super::DockerBuilder;
 
@@ -24,6 +24,10 @@ impl DockerBuilder {
         &self,
         config: &DockerfileConfig,
         tag: &str,
+        command: Option<Vec<String>>,
+        volumes: Option<Vec<String>>,
+        network: Option<String>,
+        env: Option<Vec<String>>,
     ) -> Result<String, DockerError> {
         // Create a temporary directory for the build context
         let temp_dir = tempfile::tempdir().map_err(|e| DockerError::FileError(e.into()))?;
@@ -64,6 +68,13 @@ impl DockerBuilder {
         // Create and start container from our image
         let container_config = Config {
             image: Some(tag.to_string()),
+            cmd: command.map(|v| v.iter().map(|s| s.to_string()).collect()),
+            env: env.map(|v| v.iter().map(|s| s.to_string()).collect()),
+            host_config: Some(HostConfig {
+                binds: volumes.map(|v| v.iter().map(|s| s.to_string()).collect()),
+                network_mode: network,
+                ..Default::default()
+            }),
             ..Default::default()
         };
 

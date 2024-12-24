@@ -139,7 +139,7 @@ use dockworker::{Service, ResourceLimits};
 
 let service = Service {
     image: Some("nginx:latest".to_string()),
-    resources: Some(ResourceLimits {
+    requirements: Some(ResourceLimits {
         cpu_limit: Some(0.5),                        // Half a CPU
         memory_limit: Some("512M".to_string()),      // 512MB memory limit
         memory_swap: Some("1G".to_string()),         // 1GB swap limit

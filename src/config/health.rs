@@ -1,4 +1,5 @@
 use crate::error::DockerError;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[cfg(feature = "docker")]
@@ -7,15 +8,38 @@ use reqwest::Client;
 #[cfg(feature = "docker")]
 use tokio::time::sleep;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthCheck {
     pub endpoint: String,
     pub method: String,
     pub expected_status: u16,
     pub body: Option<String>,
+    #[serde(with = "duration_serde")]
     pub interval: Duration,
+    #[serde(with = "duration_serde")]
     pub timeout: Duration,
     pub retries: u32,
+}
+
+// Custom serialization for Duration
+pub(crate) mod duration_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::time::Duration;
+
+    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        duration.as_nanos().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let nanos = u128::deserialize(deserializer)?;
+        Ok(Duration::from_nanos(nanos as u64))
+    }
 }
 
 #[cfg(feature = "docker")]

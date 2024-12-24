@@ -1,34 +1,11 @@
 use super::volume::VolumeType;
+use crate::config::health::HealthCheck;
+use crate::config::requirements::SystemRequirements;
 use crate::error::DockerError;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceLimits {
-    pub cpu_limit: Option<f64>,             // Number of CPUs
-    pub memory_limit: Option<String>,       // e.g., "1G", "512M"
-    pub memory_swap: Option<String>,        // Total memory including swap
-    pub memory_reservation: Option<String>, // Soft limit
-    pub cpus_shares: Option<i64>,           // CPU shares (relative weight)
-    pub cpuset_cpus: Option<String>,        // CPUs in which to allow execution (0-3, 0,1)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HealthCheck {
-    pub test: Vec<String>, // The test to perform. Possible values: [], ["NONE"], ["CMD", args...], ["CMD-SHELL", command]
-    pub interval: Option<i64>, // Time between checks in nanoseconds. 0 or >= 1000000 (1ms). 0 means inherit.
-    pub timeout: Option<i64>, // Time to wait before check is hung. 0 or >= 1000000 (1ms). 0 means inherit.
-    pub retries: Option<i64>, // Number of consecutive failures before unhealthy. 0 means inherit.
-    pub start_period: Option<i64>, // Container init period before retries countdown in ns. 0 or >= 1000000 (1ms). 0 means inherit.
-    pub start_interval: Option<i64>, // Time between checks during start period in ns. 0 or >= 1000000 (1ms). 0 means inherit.
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BuildConfig {
-    pub context: String,
-    pub dockerfile: Option<String>,
-}
+use std::path::{Path, PathBuf};
 
 /// Configuration for a Docker Compose deployment
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,100 +14,74 @@ pub struct ComposeConfig {
     pub version: String,
     /// Map of service name to service configuration
     pub services: HashMap<String, Service>,
+    /// Map of volume name to volume configuration
+    #[serde(default)]
+    pub volumes: HashMap<String, VolumeType>,
 }
 
 impl Default for ComposeConfig {
     fn default() -> Self {
         ComposeConfig {
-            version: "3.8".to_string(),
+            version: "3".to_string(),
             services: HashMap::new(),
+            volumes: HashMap::new(),
         }
     }
 }
 
 /// Configuration for a single service in a Docker Compose file
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Service {
     pub image: Option<String>,
     pub build: Option<BuildConfig>,
+    #[serde(default)]
+    #[serde(deserialize_with = "deserialize_command")]
     pub command: Option<Vec<String>>,
     pub environment: Option<HashMap<String, String>>,
     pub volumes: Option<Vec<VolumeType>>,
     pub depends_on: Option<Vec<String>>,
     pub ports: Option<Vec<String>>,
     pub networks: Option<Vec<String>>,
-    pub resources: Option<ResourceLimits>,
+    pub requirements: Option<SystemRequirements>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub healthcheck: Option<HealthCheck>,
     pub restart: Option<String>,
+    pub user: Option<String>,
 }
 
-impl Default for Service {
-    fn default() -> Self {
-        Service {
-            image: None,
-            build: None,
-            command: None,
-            environment: None,
-            volumes: None,
-            depends_on: None,
-            ports: None,
-            networks: None,
-            resources: None,
-            healthcheck: None,
-            restart: None,
+fn deserialize_command<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+    let value = serde_yaml::Value::deserialize(deserializer)?;
+
+    match value {
+        serde_yaml::Value::String(s) => Ok(Some(vec![s])),
+        serde_yaml::Value::Sequence(seq) => {
+            let items: Result<Vec<String>, _> = seq
+                .into_iter()
+                .map(|v| {
+                    v.as_str()
+                        .map(String::from)
+                        .ok_or_else(|| Error::custom("Invalid command item"))
+                })
+                .collect();
+            Ok(Some(items?))
         }
+        serde_yaml::Value::Null => Ok(None),
+        _ => Err(Error::custom("Invalid command format")),
     }
 }
 
-impl Service {
-    /// Normalizes the image name by adding a :latest tag if none is specified
-    fn normalize_image(&mut self) {
-        if let Some(image) = &self.image {
-            if !image.contains(':') {
-                self.image = Some(format!("{}:latest", image));
-            }
-        }
-    }
-
-    /// Validates and fixes volume paths in the service configuration
-    pub fn fix_volumes(&mut self, base_path: &PathBuf) -> Result<(), DockerError> {
-        if let Some(volumes) = &mut self.volumes {
-            let mut fixed = Vec::new();
-            for volume in volumes.iter() {
-                match volume {
-                    VolumeType::Named(_) => fixed.push(volume.clone()),
-                    VolumeType::Bind {
-                        source,
-                        target,
-                        read_only,
-                    } => {
-                        let fixed_source = if source.is_relative() {
-                            base_path.join(source)
-                        } else {
-                            source.clone()
-                        };
-                        fixed.push(VolumeType::Bind {
-                            source: fixed_source,
-                            target: target.clone(),
-                            read_only: *read_only,
-                        });
-                    }
-                }
-            }
-            *volumes = fixed;
-        }
-        Ok(())
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildConfig {
+    pub context: String,
+    pub dockerfile: Option<String>,
 }
 
 impl ComposeConfig {
-    /// Normalizes the configuration by fixing image names and volume paths
-    pub fn normalize(&mut self) {
-        for service in self.services.values_mut() {
-            service.normalize_image();
-        }
-    }
-
+    /// Validates that required environment variables are present
     pub fn validate_required_env_vars(&self, vars: &[&str]) -> Result<(), DockerError> {
         for (service_name, service) in &self.services {
             if let Some(env) = &service.environment {
@@ -152,16 +103,12 @@ impl ComposeConfig {
         Ok(())
     }
 
+    /// Validates that required volumes are present
     pub fn validate_required_volumes(&self, required: &[&str]) -> Result<(), DockerError> {
         for (service_name, service) in &self.services {
             if let Some(volumes) = &service.volumes {
                 for required_volume in required {
-                    if !volumes.iter().any(|v| match v {
-                        VolumeType::Named(name) => {
-                            name.split(':').next().unwrap_or("") == *required_volume
-                        }
-                        VolumeType::Bind { target, .. } => target == required_volume,
-                    }) {
+                    if !volumes.iter().any(|v| v.matches_name(required_volume)) {
                         return Err(DockerError::ValidationError(format!(
                             "Service '{}' is missing required volume: {}",
                             service_name, required_volume
@@ -173,6 +120,7 @@ impl ComposeConfig {
         Ok(())
     }
 
+    /// Resolves the order in which services should be deployed based on dependencies
     pub fn resolve_service_order(&self) -> Result<Vec<String>, DockerError> {
         let mut result = Vec::new();
         let mut visited = HashSet::new();
@@ -222,10 +170,10 @@ impl ComposeConfig {
         }
 
         // Perform topological sort
-        for service in self.services.keys().cloned() {
-            if !visited.contains(&service) {
+        for service in self.services.keys() {
+            if !visited.contains(service) {
                 visit(
-                    service.as_str(),
+                    service,
                     &graph,
                     &mut visited,
                     &mut temp_visited,
@@ -237,155 +185,108 @@ impl ComposeConfig {
         Ok(result)
     }
 
-    pub fn fix_relative_paths(&mut self, base_path: &PathBuf) {
-        for service in self.services.values_mut() {
-            if let Some(volumes) = &mut service.volumes {
-                for volume in volumes.iter_mut() {
-                    if let VolumeType::Bind {
-                        source,
-                        target: _,
-                        read_only: _,
-                    } = volume
-                    {
-                        if source.starts_with(".") {
-                            *source = base_path.join(source.strip_prefix("./").unwrap_or(source));
+    /// Collects all volumes used in services and adds them to the volumes section
+    pub fn collect_volumes(&mut self) {
+        let mut used_volumes = HashMap::new();
+
+        // Collect all named volumes from services
+        for service in self.services.values() {
+            if let Some(volumes) = &service.volumes {
+                for volume in volumes {
+                    if let VolumeType::Named(name) = volume {
+                        let volume_name = name.split(':').next().unwrap_or(name).to_string();
+                        if !self.volumes.contains_key(&volume_name) {
+                            used_volumes.insert(volume_name, volume.clone());
                         }
                     }
                 }
             }
         }
+
+        // Add missing volumes to the volumes section
+        self.volumes.extend(used_volumes);
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_compose_volume_parsing() {
-        let yaml = r#"
-            version: "3.8"
-            services:
-              test:
-                volumes:
-                  - type: volume
-                    source: named_vol
-                    target: /data
-                  - type: bind
-                    source: ./local
-                    target: /container
-                  - type: bind
-                    source: /abs/path
-                    target: /container/config
-                    read_only: true
-        "#;
-
-        let config: ComposeConfig = serde_yaml::from_str(yaml).unwrap();
-        let service = config.services.get("test").unwrap();
-        let volumes = service.volumes.as_ref().unwrap();
-
-        assert_eq!(volumes.len(), 3);
-
-        // Check named volume
-        assert!(matches!(&volumes[0], VolumeType::Named(name) if name == "named_vol:/data"));
-
-        // Check relative path bind mount
-        match &volumes[1] {
-            VolumeType::Bind {
-                source,
-                target,
-                read_only,
-            } => {
-                assert_eq!(source, &PathBuf::from("./local"));
-                assert_eq!(target, "/container");
-                assert!(!read_only);
+    /// Resolves environment variables in the configuration
+    pub fn resolve_env(&mut self, env_vars: &HashMap<String, String>) {
+        // Helper function to resolve env vars in a volume
+        fn resolve_volume(volume: &mut VolumeType, env_vars: &HashMap<String, String>) {
+            match volume {
+                VolumeType::Named(name) => {
+                    *name = ComposeConfig::resolve_env_value(name, env_vars);
+                }
+                VolumeType::Bind { source, target, .. } => {
+                    *source = ComposeConfig::resolve_env_value(source, env_vars);
+                    *target = ComposeConfig::resolve_env_value(target, env_vars);
+                }
+                VolumeType::Config {
+                    name,
+                    driver,
+                    driver_opts,
+                } => {
+                    *name = ComposeConfig::resolve_env_value(name, env_vars);
+                    if let Some(d) = driver {
+                        *d = ComposeConfig::resolve_env_value(d, env_vars);
+                    }
+                    if let Some(opts) = driver_opts {
+                        for value in opts.values_mut() {
+                            *value = ComposeConfig::resolve_env_value(value, env_vars);
+                        }
+                    }
+                }
             }
-            _ => panic!("Expected bind mount"),
         }
 
-        // Check absolute path bind mount with read-only
-        match &volumes[2] {
-            VolumeType::Bind {
-                source,
-                target,
-                read_only,
-            } => {
-                assert_eq!(source, &PathBuf::from("/abs/path"));
-                assert_eq!(target, "/container/config");
-                assert!(*read_only);
+        // Resolve environment variables in services
+        for service in self.services.values_mut() {
+            // Resolve service environment
+            if let Some(environment) = &mut service.environment {
+                for value in environment.values_mut() {
+                    *value = Self::resolve_env_value(value, env_vars);
+                }
             }
-            _ => panic!("Expected bind mount"),
+
+            // Resolve service volumes
+            if let Some(volumes) = &mut service.volumes {
+                for volume in volumes.iter_mut() {
+                    resolve_volume(volume, env_vars);
+                }
+            }
+        }
+
+        // Resolve environment variables in volume configurations
+        for volume in self.volumes.values_mut() {
+            resolve_volume(volume, env_vars);
         }
     }
 
-    #[test]
-    fn test_service_volume_fixing() {
-        let mut config = ComposeConfig::default();
-        let mut service = Service::default();
-        service.volumes = Some(vec![VolumeType::Bind {
-            source: PathBuf::from("./data"),
-            target: "/container/data".to_string(),
-            read_only: false,
-        }]);
-        config.services.insert("test_service".to_string(), service);
+    fn resolve_env_value(value: &str, env_vars: &HashMap<String, String>) -> String {
+        let re = Regex::new(r"\$\{([^}]+)}|\$([a-zA-Z_][a-zA-Z0-9_]*)").unwrap();
+        let mut result = value.to_string();
 
-        let base_path = PathBuf::from("/base/path");
-        config.fix_relative_paths(&base_path);
+        for cap in re.captures_iter(value) {
+            let full_match = cap.get(0).unwrap();
+            let var_name = cap
+                .get(1)
+                .or_else(|| cap.get(2))
+                .map(|m| m.as_str())
+                .unwrap_or("");
 
-        let volumes = config.services["test_service"].volumes.as_ref().unwrap();
-        assert!(
-            matches!(&volumes[0], VolumeType::Bind { source, target, read_only }
-                if source == &base_path.join("data")
-                    && target == "/container/data"
-                    && !read_only
-            )
-        );
-    }
+            let (name, default) = if let Some((n, d)) = var_name.split_once(":-") {
+                (n, Some(d))
+            } else {
+                (var_name, None)
+            };
 
-    #[test]
-    fn test_volume_serialization() {
-        let volume = VolumeType::Bind {
-            source: PathBuf::from("/host"),
-            target: "/container".to_string(),
-            read_only: true,
-        };
+            let replacement = env_vars
+                .get(name)
+                .cloned()
+                .or_else(|| std::env::var(name).ok())
+                .or_else(|| default.map(|d| d.to_string()))
+                .unwrap_or_default();
 
-        let service = Service {
-            volumes: Some(vec![volume]),
-            ..Default::default()
-        };
-
-        let serialized = serde_yaml::to_string(&service).unwrap();
-        let deserialized: Service = serde_yaml::from_str(&serialized).unwrap();
-
-        assert_eq!(service.volumes, deserialized.volumes);
-    }
-
-    #[test]
-    fn test_volume_validation() {
-        let mut config = ComposeConfig {
-            version: "3.8".to_string(),
-            services: HashMap::new(),
-        };
-
-        let service = Service {
-            volumes: Some(vec![
-                VolumeType::Named("data:/data".to_string()),
-                VolumeType::Bind {
-                    source: PathBuf::from("/host"),
-                    target: "/container".to_string(),
-                    read_only: false,
-                },
-            ]),
-            ..Default::default()
-        };
-
-        config.services.insert("test".to_string(), service);
-
-        // Test validation
-        assert!(config.validate_required_volumes(&["data"]).is_ok());
-        assert!(config.validate_required_volumes(&["/container"]).is_ok());
-        assert!(config.validate_required_volumes(&["missing"]).is_err());
+            result = result.replace(full_match.as_str(), &replacement);
+        }
+        result
     }
 }

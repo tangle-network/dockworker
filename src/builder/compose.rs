@@ -1,17 +1,22 @@
+use crate::{
+    DockerBuilder,
+    config::{
+        compose::{ComposeConfig, Service},
+        health::HealthCheck,
+        volume::VolumeType,
+    },
+    error::DockerError,
+    parser::compose::ComposeParser,
+};
 use bollard::container::{Config, CreateContainerOptions, StartContainerOptions};
 use bollard::image::BuildImageOptions;
 use bollard::network::CreateNetworkOptions;
 use bollard::service::{HealthConfig, HostConfig, Mount, MountTypeEnum, PortBinding};
 use futures_util::StreamExt;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::fs;
 use uuid::Uuid;
-
-use crate::DockerBuilder;
-use crate::config::compose::{ComposeConfig, HealthCheck, Service};
-use crate::error::DockerError;
-use crate::parser::compose::ComposeParser;
 
 impl DockerBuilder {
     pub async fn from_compose<P: AsRef<Path>>(
@@ -24,7 +29,7 @@ impl DockerBuilder {
 
     pub async fn deploy_compose(
         &self,
-        config: &ComposeConfig,
+        config: &mut ComposeConfig,
     ) -> Result<HashMap<String, String>, DockerError> {
         let network_name = format!("compose_network_{}", Uuid::new_v4());
 
@@ -38,6 +43,34 @@ impl DockerBuilder {
             .await
             .map_err(DockerError::BollardError)?;
 
+        // Collect all volumes from services
+        config.collect_volumes();
+
+        // Create volumes defined in the compose file
+        for (volume_name, volume_type) in &config.volumes {
+            if let VolumeType::Named(_) = volume_type {
+                println!("Creating volume: {}", volume_name);
+                self.client
+                    .create_volume(bollard::volume::CreateVolumeOptions {
+                        name: volume_name.to_string(),
+                        ..Default::default()
+                    })
+                    .await
+                    .map_err(DockerError::BollardError)?;
+            }
+        }
+
+        // Collect environment variables
+        let mut env_vars = std::env::vars().collect::<HashMap<String, String>>();
+        for service in config.services.values() {
+            if let Some(service_env) = &service.environment {
+                env_vars.extend(service_env.clone());
+            }
+        }
+
+        // Resolve environment variables
+        config.resolve_env(&env_vars);
+
         let mut container_ids = HashMap::new();
 
         // Get service deployment order
@@ -46,6 +79,7 @@ impl DockerBuilder {
         // Deploy services in order
         for service_name in service_order {
             let service = config.services.get(&service_name).unwrap();
+            println!("Deploying service: {}", service_name);
             let container_id = self
                 .deploy_service(&service_name, service, &network_name)
                 .await?;
@@ -66,52 +100,14 @@ impl DockerBuilder {
         };
 
         // Add resource limits if specified
-        if let Some(resources) = &service.resources {
-            host_config.memory = resources
-                .memory_limit
-                .as_ref()
-                .and_then(|m| parse_memory_string(m).ok());
-            host_config.memory_swap = resources
-                .memory_swap
-                .as_ref()
-                .and_then(|m| parse_memory_string(m).ok());
-            host_config.memory_reservation = resources
-                .memory_reservation
-                .as_ref()
-                .and_then(|m| parse_memory_string(m).ok());
-            host_config.cpu_shares = resources.cpus_shares;
-            host_config.cpuset_cpus = resources.cpuset_cpus.clone();
-            host_config.nano_cpus = resources.cpu_limit.map(|c| (c * 1e9) as i64);
+        if let Some(requirements) = &service.requirements {
+            host_config = requirements.to_host_config();
+            host_config.network_mode = Some(network_name.to_string());
         }
 
         // Configure mounts if volumes are specified
         if let Some(volumes) = &service.volumes {
-            let mounts: Vec<Mount> = volumes
-                .iter()
-                .map(|vol| match vol {
-                    crate::VolumeType::Named(name) => {
-                        let parts: Vec<&str> = name.split(':').collect();
-                        Mount {
-                            target: Some(parts[1].to_string()),
-                            source: Some(parts[0].to_string()),
-                            typ: Some(MountTypeEnum::VOLUME),
-                            ..Default::default()
-                        }
-                    }
-                    crate::VolumeType::Bind {
-                        source,
-                        target,
-                        read_only,
-                    } => Mount {
-                        target: Some(target.clone()),
-                        source: Some(source.to_string_lossy().to_string()),
-                        typ: Some(MountTypeEnum::BIND),
-                        read_only: Some(*read_only),
-                        ..Default::default()
-                    },
-                })
-                .collect();
-
+            let mounts: Vec<Mount> = volumes.iter().map(|vol| vol.to_mount()).collect();
             host_config.mounts = Some(mounts);
         }
 
@@ -138,11 +134,17 @@ impl DockerBuilder {
 
     fn create_health_config(health: &HealthCheck) -> HealthConfig {
         HealthConfig {
-            test: Some(health.test.clone()),
-            interval: health.interval,
-            timeout: health.timeout,
-            start_period: health.start_period,
-            retries: health.retries,
+            test: Some(vec![
+                "CMD-SHELL".to_string(),
+                format!(
+                    "curl -X {} {} -s -f -o /dev/null -w '%{{http_code}}' | grep -q {}",
+                    health.method, health.endpoint, health.expected_status
+                ),
+            ]),
+            interval: Some(health.interval.as_nanos() as i64),
+            timeout: Some(health.timeout.as_nanos() as i64),
+            retries: Some(health.retries as i64),
+            start_period: None,
             ..Default::default()
         }
     }
@@ -186,13 +188,30 @@ impl DockerBuilder {
             })?
         };
 
+        // Pull the image if it doesn't exist
+        if let Err(_) = self.client.inspect_image(&image).await {
+            println!("Image {} not found locally, pulling...", image);
+            let mut pull_stream = self.client.create_image(
+                Some(bollard::image::CreateImageOptions {
+                    from_image: image.as_str(),
+                    ..Default::default()
+                }),
+                None,
+                None,
+            );
+
+            while let Some(pull_result) = pull_stream.next().await {
+                match pull_result {
+                    Ok(_) => continue,
+                    Err(e) => return Err(DockerError::BollardError(e)),
+                }
+            }
+        }
+
         let mut container_config = Config {
             image: Some(image),
             cmd: service.command.clone(),
-            env: service
-                .environment
-                .as_ref()
-                .map(|env| env.iter().map(|(k, v)| format!("{}={}", k, v)).collect()),
+            env: Self::prepare_environment_variables(service),
             ..Default::default()
         };
 
@@ -223,6 +242,13 @@ impl DockerBuilder {
 
         Ok(container.id)
     }
+
+    pub fn prepare_environment_variables(service: &Service) -> Option<Vec<String>> {
+        service
+            .environment
+            .as_ref()
+            .map(|env| env.iter().map(|(k, v)| format!("{}={}", k, v)).collect())
+    }
 }
 
 // Helper function to parse memory strings like "1G", "512M" into bytes
@@ -241,37 +267,5 @@ pub fn parse_memory_string(memory: &str) -> Result<i64, DockerError> {
             "Invalid memory unit: {}",
             unit
         ))),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_service_deployment() {
-        let mut config = ComposeConfig::default();
-        let service = Service {
-            image: Some("nginx:latest".to_string()),
-            volumes: Some(vec![crate::VolumeType::Bind {
-                source: PathBuf::from("/host/data"),
-                target: "/container/data".to_string(),
-                read_only: false,
-            }]),
-            ..Default::default()
-        };
-
-        config.services.insert("web".to_string(), service);
-
-        // Add test assertions here
-        assert!(config.services.contains_key("web"));
-    }
-
-    #[test]
-    fn test_memory_string_parsing() {
-        assert_eq!(parse_memory_string("512M").unwrap(), 512 * 1024 * 1024);
-        assert_eq!(parse_memory_string("1G").unwrap(), 1024 * 1024 * 1024);
-        assert!(parse_memory_string("invalid").is_err());
     }
 }

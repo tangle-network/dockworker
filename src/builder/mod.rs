@@ -1,6 +1,5 @@
-use bollard::Docker;
-
 use crate::error::DockerError;
+use bollard::Docker;
 
 pub mod compose;
 pub mod docker_file;
