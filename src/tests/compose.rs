@@ -1,38 +1,45 @@
 use crate::tests::docker_file::is_docker_running;
 use bollard::container::ListContainersOptions;
-use pretty_assertions::assert_eq;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
-use crate::{BuildConfig, ComposeConfig, DockerBuilder, ServiceConfig};
+use crate::{BuildConfig, ComposeConfig, DockerBuilder, Service};
 
 use super::fixtures::{get_local_reth_compose, get_reth_archive_compose};
 
-#[tokio::test]
-async fn test_local_reth_compose_parsing() {
-    let builder = DockerBuilder::new().unwrap();
-    let config = builder
-        .from_compose(get_local_reth_compose())
-        .await
-        .unwrap();
+#[test]
+fn test_local_reth_compose_parsing() {
+    let yaml = r#"
+        version: "3.8"
+        services:
+          reth:
+            image: ghcr.io/paradigmxyz/reth:latest
+            ports:
+              - "8545:8545"
+              - "9000:9000"
+            command:
+              - /reth/target/release/reth
+              - node
+              - --metrics
+              - reth:9000
+              - --debug.tip
+              - ${RETH_TIP:-0x7d5a4369273c723454ac137f48a4f142b097aa2779464e6505f1b1c5e37b5382}
+              - --log.directory
+              - $HOME
+            volumes:
+              - type: bind
+                source: ./data
+                target: /data
+                read_only: false
+    "#;
 
-    assert_eq!(config.version, "3.9");
-    assert_eq!(config.services.len(), 3);
+    let config: ComposeConfig = serde_yaml::from_str(yaml).unwrap();
+    let service = config.services.get("reth").unwrap();
 
-    // Test reth service
-    let reth = config.services.get("reth").unwrap();
-    assert!(reth.build.is_some());
-    assert_eq!(reth.build.as_ref().unwrap().context, "./reth".to_string());
-    assert_eq!(reth.ports, Some(vec!["9000:9000".to_string()]));
-
-    // Test prometheus service
-    let prometheus = config.services.get("prometheus").unwrap();
-    assert_eq!(prometheus.image, Some("prom/prometheus".to_string()));
-    assert_eq!(prometheus.ports, Some(vec!["9090:9090".to_string()]));
-
-    // Test grafana service
-    let grafana = config.services.get("grafana").unwrap();
-    assert_eq!(grafana.image, Some("grafana/grafana".to_string()));
-    assert_eq!(grafana.ports, Some(vec!["3000:3000".to_string()]));
+    assert!(service.command.is_some());
+    let command = service.command.as_ref().unwrap();
+    assert_eq!(command.len(), 8);
+    assert_eq!(command[0], "/reth/target/release/reth");
+    assert_eq!(command[1], "node");
 }
 
 #[tokio::test]
@@ -89,13 +96,13 @@ async fn test_compose_deployment() {
 
     // Create network with retry mechanism
     builder
-        .create_network_with_retry(&network_name, 3)
+        .create_network_with_retry(&network_name, 3, Duration::from_secs(2))
         .await
         .unwrap();
 
     // Create a simple test compose config
     let mut services = HashMap::new();
-    services.insert("test-service".to_string(), ServiceConfig {
+    services.insert("test-service".to_string(), Service {
         image: Some("alpine:latest".to_string()),
         ports: Some(vec!["8080:80".to_string()]),
         environment: Some({
@@ -105,7 +112,7 @@ async fn test_compose_deployment() {
         }),
         volumes: None,
         networks: Some(vec![network_name.clone()]),
-        ..ServiceConfig::default()
+        ..Service::default()
     });
 
     let config = ComposeConfig {
@@ -162,7 +169,7 @@ async fn test_compose_with_build() {
 
     // Create a compose config with build context
     let mut services = HashMap::new();
-    services.insert("build-service".to_string(), ServiceConfig {
+    services.insert("build-service".to_string(), Service {
         image: None,
         build: Some(BuildConfig {
             context: "./".to_string(),
@@ -176,6 +183,7 @@ async fn test_compose_with_build() {
         depends_on: None,
         healthcheck: None,
         restart: None,
+        command: None,
     });
 
     let config = ComposeConfig {

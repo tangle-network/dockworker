@@ -3,7 +3,7 @@ use crate::DockerError;
 use crate::builder::compose::parse_memory_string;
 use crate::{
     DockerBuilder,
-    config::compose::{ComposeConfig, ResourceLimits, ServiceConfig},
+    config::compose::{ComposeConfig, ResourceLimits, Service},
 };
 use std::collections::HashMap;
 
@@ -18,7 +18,7 @@ async fn test_resource_limits() {
 
     // Create a service with resource limits
     let mut services = HashMap::new();
-    services.insert("limited-service".to_string(), ServiceConfig {
+    services.insert("limited-service".to_string(), Service {
         image: Some("alpine:latest".to_string()),
         resources: Some(ResourceLimits {
             cpu_limit: Some(0.5), // Half a CPU
@@ -28,7 +28,7 @@ async fn test_resource_limits() {
             cpus_shares: Some(512),
             cpuset_cpus: Some("0,1".to_string()),
         }),
-        ..ServiceConfig::default()
+        ..Service::default()
     });
 
     let config = ComposeConfig {

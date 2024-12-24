@@ -41,7 +41,7 @@ dockworker = { version = "0.1.0", default-features = false, features = ["parser"
 dockworker = "0.1.0"
 
 # Or explicitly with all features
-dockworker = { version = "0.1.0", features = ["deploy"] }
+dockworker = { version = "0.1.0", features = ["docker"] }
 ```
 
 ## Usage
@@ -135,9 +135,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Resource Management
 
 ```rust
-use dockworker::{ServiceConfig, ResourceLimits};
+use dockworker::{Service, ResourceLimits};
 
-let service = ServiceConfig {
+let service = Service {
     image: Some("nginx:latest".to_string()),
     resources: Some(ResourceLimits {
         cpu_limit: Some(0.5),                        // Half a CPU
@@ -154,9 +154,9 @@ let service = ServiceConfig {
 ### Health Checks
 
 ```rust
-use dockworker::{ServiceConfig, config::compose::HealthCheck};
+use dockworker::{Service, config::compose::HealthCheck};
 
-let service = ServiceConfig {
+let service = Service {
     image: Some("nginx:latest".to_string()),
     healthcheck: Some(HealthCheck {
         test: vec![

@@ -5,9 +5,9 @@ mod docker_file;
 // Deployment tests only with deploy feature
 mod compose_health;
 mod compose_resources;
-mod management;
-
 mod fixtures;
+mod integration;
+mod management;
 
 use std::path::PathBuf;
 

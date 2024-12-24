@@ -5,9 +5,12 @@ use bollard::network::CreateNetworkOptions;
 use bollard::secret::{Ipam, IpamConfig, NetworkCreateResponse};
 use bollard::volume::{CreateVolumeOptions, ListVolumesOptions};
 use futures_util::TryStreamExt;
-use ipnet::IpNet;
+use ipnet::{IpNet, Ipv4Net};
 use std::collections::HashMap;
+use std::net::Ipv4Addr;
+use std::str::FromStr;
 use std::time::Duration;
+use tokio::time::sleep;
 
 use super::DockerBuilder;
 
@@ -24,19 +27,37 @@ impl DockerBuilder {
             .filter_map(|s| s.parse().ok())
             .collect();
 
-        // Try simple subnet ranges
-        for octet2 in [10, 172, 192] {
-            for octet3 in 0..255 {
-                let subnet = format!("{}.{}.0.0/16", octet2, octet3);
-                let gateway = format!("{}.{}.0.1", octet2, octet3);
+        // Try different private network ranges
+        let ranges = [
+            (Ipv4Addr::new(10, 0, 0, 0), 8),     // 10.0.0.0/8
+            (Ipv4Addr::new(172, 16, 0, 0), 12),  // 172.16.0.0/12
+            (Ipv4Addr::new(192, 168, 0, 0), 16), // 192.168.0.0/16
+        ];
 
-                // Try to parse the subnet to validate it
-                if let Ok(candidate) = subnet.parse::<IpNet>() {
-                    if !used_subnets.iter().any(|net| {
-                        net.contains(&candidate.addr()) || candidate.contains(&net.addr())
-                    }) {
-                        return Ok((subnet, gateway));
-                    }
+        for (base_addr, prefix_len) in ranges {
+            // Try subdividing the network into /24 subnets
+            for third_octet in 0..=255 {
+                let subnet_addr =
+                    Ipv4Addr::new(base_addr.octets()[0], base_addr.octets()[1], third_octet, 0);
+
+                let subnet = Ipv4Net::new(subnet_addr, 24).map_err(|e| {
+                    DockerError::NetworkCreationError(format!("Invalid subnet: {}", e))
+                })?;
+                let subnet_net = IpNet::V4(subnet);
+
+                // Check for overlaps
+                if !used_subnets.iter().any(|used| {
+                    used.contains(&subnet_net.addr()) || subnet_net.contains(&used.addr())
+                }) {
+                    // Use the first available host address as gateway
+                    let gateway = Ipv4Addr::new(
+                        subnet_addr.octets()[0],
+                        subnet_addr.octets()[1],
+                        subnet_addr.octets()[2],
+                        1,
+                    );
+
+                    return Ok((subnet.to_string(), gateway.to_string()));
                 }
             }
         }
@@ -49,9 +70,33 @@ impl DockerBuilder {
     pub async fn create_network(
         &self,
         name: &str,
-        subnet: &str,  // No longer optional
-        gateway: &str, // No longer optional
+        subnet: &str,
+        gateway: &str,
     ) -> Result<NetworkCreateResponse, DockerError> {
+        // Validate subnet format
+        let subnet_net = IpNet::from_str(subnet).map_err(|e| {
+            DockerError::NetworkCreationError(format!("Invalid subnet format: {}", e))
+        })?;
+
+        // Validate gateway is within subnet
+        let gateway_ip = std::net::IpAddr::from_str(gateway).map_err(|e| {
+            DockerError::NetworkCreationError(format!("Invalid gateway format: {}", e))
+        })?;
+        if !subnet_net.contains(&gateway_ip) {
+            return Err(DockerError::NetworkCreationError(
+                "Gateway must be within subnet range".to_string(),
+            ));
+        }
+
+        // Check for existing networks with same name
+        let networks = self.list_networks().await?;
+        if networks.contains(&name.to_string()) {
+            return Err(DockerError::NetworkCreationError(format!(
+                "Network {} already exists",
+                name
+            )));
+        }
+
         let ipam = Ipam {
             driver: Some("default".to_string()),
             config: Some(vec![IpamConfig {
@@ -75,38 +120,64 @@ impl DockerBuilder {
                 ..Default::default()
             })
             .await
-            .map_err(DockerError::BollardError)
+            .map_err(|e| {
+                if e.to_string().contains("Pool overlaps") {
+                    DockerError::NetworkCreationError(
+                        "Subnet overlaps with existing network".into(),
+                    )
+                } else {
+                    DockerError::BollardError(e)
+                }
+            })
     }
 
     pub async fn create_network_with_retry(
         &self,
         name: &str,
         max_retries: usize,
-    ) -> Result<(), DockerError> {
+        initial_delay: Duration,
+    ) -> Result<NetworkCreateResponse, DockerError> {
+        let mut delay = initial_delay;
+        let mut last_error = None;
+
         for attempt in 0..max_retries {
             match self.find_available_subnet().await {
-                Ok((subnet, gateway)) => match self.create_network(name, &subnet, &gateway).await {
-                    Ok(_) => return Ok(()),
-                    Err(_) if attempt < max_retries - 1 => {
-                        tokio::time::sleep(Duration::from_millis(100)).await;
+                Ok((subnet, gateway)) => {
+                    match self.create_network(name, &subnet, &gateway).await {
+                        Ok(response) => return Ok(response),
+                        Err(e) => {
+                            last_error = Some(e);
+                            if attempt < max_retries - 1 {
+                                sleep(delay).await;
+                                delay *= 2; // Exponential backoff
+                                continue;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < max_retries - 1 {
+                        sleep(delay).await;
+                        delay *= 2;
                         continue;
                     }
-                    Err(e) => return Err(e),
-                },
-                Err(_) if attempt < max_retries - 1 => {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                    continue;
                 }
-                Err(e) => return Err(e),
             }
         }
 
-        Err(DockerError::NetworkCreationError(
-            "Failed to create network after retries".to_string(),
-        ))
+        Err(last_error.unwrap_or_else(|| {
+            DockerError::NetworkCreationError("Failed to create network after retries".into())
+        }))
     }
 
     pub async fn remove_network(&self, name: &str) -> Result<(), DockerError> {
+        // Check if network exists before trying to remove it
+        let networks = self.list_networks().await?;
+        if !networks.contains(&name.to_string()) {
+            return Ok(());
+        }
+
         self.client
             .remove_network(name)
             .await

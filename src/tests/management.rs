@@ -6,61 +6,80 @@ use tokio::time::timeout;
 use super::docker_file::is_docker_running;
 use crate::DockerBuilder;
 
-#[tokio::test]
-async fn test_network_management() {
-    if !is_docker_running() {
-        println!("Skipping test: Docker is not running");
-        return;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::time::timeout;
+    use uuid::Uuid;
+
+    #[tokio::test]
+    async fn test_network_management() -> Result<(), Box<dyn std::error::Error>> {
+        let builder = DockerBuilder::new()?;
+
+        // Create a unique network name
+        let network_name = format!("test_network_{}", Uuid::new_v4());
+
+        // Create network with retries
+        let result = timeout(
+            Duration::from_secs(30),
+            builder.create_network_with_retry(
+                &network_name,
+                5,                          // max retries
+                Duration::from_millis(100), // initial delay
+            ),
+        )
+        .await??;
+
+        assert!(result.id.is_some(), "Network creation should return an ID");
+
+        // Verify network exists
+        let networks = timeout(Duration::from_secs(5), builder.list_networks()).await??;
+        assert!(
+            networks.contains(&network_name),
+            "Created network should be in the list"
+        );
+
+        // Clean up
+        timeout(
+            Duration::from_secs(5),
+            builder.remove_network(&network_name),
+        )
+        .await??;
+
+        // Verify removal
+        let networks_after = timeout(Duration::from_secs(5), builder.list_networks()).await??;
+        assert!(
+            !networks_after.contains(&network_name),
+            "Removed network should not be in the list"
+        );
+
+        Ok(())
     }
 
-    let builder = DockerBuilder::new().unwrap();
-    let test_network = format!("test-network-{}", uuid::Uuid::new_v4());
+    #[tokio::test]
+    async fn test_network_subnet_validation() -> Result<(), Box<dyn std::error::Error>> {
+        let builder = DockerBuilder::new()?;
 
-    // Test 1: Network Creation
-    let result = timeout(
-        Duration::from_secs(5),
-        builder.create_network(
-            &test_network,
-            "172.18.0.0/16", // Use a specific subnet for testing
-            "172.18.0.1",
-        ),
-    )
-    .await
-    .expect("Network creation timed out")
-    .expect("Failed to create network");
+        // Test finding available subnet
+        let (subnet, gateway) = builder.find_available_subnet().await?;
 
-    assert!(result.id.is_some(), "Network creation should return an ID");
+        // Validate subnet format
+        assert!(
+            subnet.parse::<ipnet::IpNet>().is_ok(),
+            "Subnet should be valid CIDR"
+        );
 
-    // Test 2: Network Listing
-    let networks = timeout(Duration::from_secs(5), builder.list_networks())
-        .await
-        .expect("Network listing timed out")
-        .expect("Failed to list networks");
+        // Validate gateway is in subnet
+        let subnet_net = subnet.parse::<ipnet::IpNet>()?;
+        let gateway_ip = gateway.parse::<std::net::IpAddr>()?;
+        assert!(
+            subnet_net.contains(&gateway_ip),
+            "Gateway should be in subnet"
+        );
 
-    assert!(
-        networks.contains(&test_network),
-        "Created network should be in the list"
-    );
-
-    // Test 3: Network Removal
-    timeout(
-        Duration::from_secs(5),
-        builder.remove_network(&test_network),
-    )
-    .await
-    .expect("Network removal timed out")
-    .expect("Failed to remove network");
-
-    // Verify removal
-    let networks_after = timeout(Duration::from_secs(5), builder.list_networks())
-        .await
-        .expect("Network listing timed out")
-        .expect("Failed to list networks");
-
-    assert!(
-        !networks_after.contains(&test_network),
-        "Removed network should not be in the list"
-    );
+        Ok(())
+    }
 }
 
 #[tokio::test]

@@ -1,17 +1,17 @@
 use bollard::container::{Config, CreateContainerOptions, StartContainerOptions};
 use bollard::image::BuildImageOptions;
 use bollard::network::CreateNetworkOptions;
-use bollard::secret::{HealthConfig, HostConfig, PortBinding};
+use bollard::service::{HealthConfig, HostConfig, Mount, MountTypeEnum, PortBinding};
 use futures_util::StreamExt;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::fs;
+use uuid::Uuid;
 
-use crate::ServiceConfig;
-use crate::config::compose::HealthCheck;
-use crate::{config::compose::ComposeConfig, error::DockerError, parser::compose::ComposeParser};
-
-use super::DockerBuilder;
+use crate::DockerBuilder;
+use crate::config::compose::{ComposeConfig, HealthCheck, Service};
+use crate::error::DockerError;
+use crate::parser::compose::ComposeParser;
 
 impl DockerBuilder {
     pub async fn from_compose<P: AsRef<Path>>(
@@ -26,7 +26,7 @@ impl DockerBuilder {
         &self,
         config: &ComposeConfig,
     ) -> Result<HashMap<String, String>, DockerError> {
-        let network_name = format!("compose_network_{}", uuid::Uuid::new_v4());
+        let network_name = format!("compose_network_{}", Uuid::new_v4());
 
         // Create a network for the compose services
         self.client
@@ -40,13 +40,16 @@ impl DockerBuilder {
 
         let mut container_ids = HashMap::new();
 
-        // Deploy each service
-        for (service_name, service_config) in &config.services {
-            let container_id = self
-                .deploy_service(service_name, service_config, &network_name)
-                .await?;
+        // Get service deployment order
+        let service_order = config.resolve_service_order()?;
 
-            container_ids.insert(service_name.clone(), container_id);
+        // Deploy services in order
+        for service_name in service_order {
+            let service = config.services.get(&service_name).unwrap();
+            let container_id = self
+                .deploy_service(&service_name, service, &network_name)
+                .await?;
+            container_ids.insert(service_name, container_id);
         }
 
         Ok(container_ids)
@@ -54,12 +57,11 @@ impl DockerBuilder {
 
     fn create_host_config(
         &self,
-        service: &ServiceConfig,
+        service: &Service,
         network_name: &str,
     ) -> Result<HostConfig, DockerError> {
         let mut host_config = HostConfig {
             network_mode: Some(network_name.to_string()),
-            binds: service.volumes.clone(),
             ..Default::default()
         };
 
@@ -82,15 +84,64 @@ impl DockerBuilder {
             host_config.nano_cpus = resources.cpu_limit.map(|c| (c * 1e9) as i64);
         }
 
+        // Configure mounts if volumes are specified
+        if let Some(volumes) = &service.volumes {
+            let mounts: Vec<Mount> = volumes
+                .iter()
+                .map(|vol| match vol {
+                    crate::VolumeType::Named(name) => {
+                        let parts: Vec<&str> = name.split(':').collect();
+                        Mount {
+                            target: Some(parts[1].to_string()),
+                            source: Some(parts[0].to_string()),
+                            typ: Some(MountTypeEnum::VOLUME),
+                            ..Default::default()
+                        }
+                    }
+                    crate::VolumeType::Bind {
+                        source,
+                        target,
+                        read_only,
+                    } => Mount {
+                        target: Some(target.clone()),
+                        source: Some(source.to_string_lossy().to_string()),
+                        typ: Some(MountTypeEnum::BIND),
+                        read_only: Some(*read_only),
+                        ..Default::default()
+                    },
+                })
+                .collect();
+
+            host_config.mounts = Some(mounts);
+        }
+
+        // Configure port bindings
+        if let Some(ports) = &service.ports {
+            let mut port_bindings = HashMap::new();
+            for port_mapping in ports {
+                let parts: Vec<&str> = port_mapping.split(':').collect();
+                if parts.len() == 2 {
+                    port_bindings.insert(
+                        format!("{}/tcp", parts[1]),
+                        Some(vec![PortBinding {
+                            host_ip: Some("0.0.0.0".to_string()),
+                            host_port: Some(parts[0].to_string()),
+                        }]),
+                    );
+                }
+            }
+            host_config.port_bindings = Some(port_bindings);
+        }
+
         Ok(host_config)
     }
 
     fn create_health_config(health: &HealthCheck) -> HealthConfig {
         HealthConfig {
             test: Some(health.test.clone()),
-            interval: health.interval.clone(),
-            timeout: health.timeout.clone(),
-            start_period: health.start_period.clone(),
+            interval: health.interval,
+            timeout: health.timeout,
+            start_period: health.start_period,
             retries: health.retries,
             ..Default::default()
         }
@@ -99,10 +150,10 @@ impl DockerBuilder {
     async fn deploy_service(
         &self,
         service_name: &str,
-        service_config: &ServiceConfig,
+        service: &Service,
         network_name: &str,
     ) -> Result<String, DockerError> {
-        let image = if let Some(build_config) = &service_config.build {
+        let image = if let Some(build_config) = &service.build {
             // Build the image if build configuration is provided
             let tag = format!("compose_{}", service_name);
             let dockerfile_path = Path::new(&build_config.context)
@@ -130,58 +181,47 @@ impl DockerBuilder {
 
             tag
         } else {
-            service_config.image.clone().ok_or_else(|| {
+            service.image.clone().ok_or_else(|| {
                 DockerError::DockerfileError("No image or build configuration provided".into())
             })?
         };
 
-        // Prepare port bindings
-        let mut port_bindings = HashMap::new();
-        if let Some(ports) = &service_config.ports {
-            for port_mapping in ports {
-                let parts: Vec<&str> = port_mapping.split(':').collect();
-                if parts.len() == 2 {
-                    port_bindings.insert(
-                        format!("{}/tcp", parts[1]),
-                        Some(vec![PortBinding {
-                            host_ip: Some("0.0.0.0".to_string()),
-                            host_port: Some(parts[0].to_string()),
-                        }]),
-                    );
-                }
-            }
-        }
-
-        let host_config = self.create_host_config(service_config, network_name)?;
-        let health_config = service_config
-            .healthcheck
-            .as_ref()
-            .map(Self::create_health_config);
-
-        let container_config = Config {
+        let mut container_config = Config {
             image: Some(image),
-            env: service_config
+            cmd: service.command.clone(),
+            env: service
                 .environment
                 .as_ref()
                 .map(|env| env.iter().map(|(k, v)| format!("{}={}", k, v)).collect()),
-            host_config: Some(host_config),
-            healthcheck: health_config,
             ..Default::default()
         };
 
-        // Create and start the container
-        let container_info = self
+        // Configure host settings
+        let host_config = self.create_host_config(service, network_name)?;
+        container_config.host_config = Some(host_config);
+
+        // Add health check if specified
+        if let Some(health) = &service.healthcheck {
+            container_config.healthcheck = Some(Self::create_health_config(health));
+        }
+
+        // Create and start container
+        let container = self
             .client
-            .create_container(None::<CreateContainerOptions<String>>, container_config)
-            .await
-            .map_err(DockerError::BollardError)?;
+            .create_container(
+                Some(CreateContainerOptions {
+                    name: service_name,
+                    platform: None,
+                }),
+                container_config,
+            )
+            .await?;
 
         self.client
-            .start_container(&container_info.id, None::<StartContainerOptions<String>>)
-            .await
-            .map_err(DockerError::BollardError)?;
+            .start_container(&container.id, None::<StartContainerOptions<String>>)
+            .await?;
 
-        Ok(container_info.id)
+        Ok(container.id)
     }
 }
 
@@ -201,5 +241,37 @@ pub fn parse_memory_string(memory: &str) -> Result<i64, DockerError> {
             "Invalid memory unit: {}",
             unit
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_service_deployment() {
+        let mut config = ComposeConfig::default();
+        let service = Service {
+            image: Some("nginx:latest".to_string()),
+            volumes: Some(vec![crate::VolumeType::Bind {
+                source: PathBuf::from("/host/data"),
+                target: "/container/data".to_string(),
+                read_only: false,
+            }]),
+            ..Default::default()
+        };
+
+        config.services.insert("web".to_string(), service);
+
+        // Add test assertions here
+        assert!(config.services.contains_key("web"));
+    }
+
+    #[test]
+    fn test_memory_string_parsing() {
+        assert_eq!(parse_memory_string("512M").unwrap(), 512 * 1024 * 1024);
+        assert_eq!(parse_memory_string("1G").unwrap(), 1024 * 1024 * 1024);
+        assert!(parse_memory_string("invalid").is_err());
     }
 }

@@ -1,9 +1,6 @@
-use crate::{
-    DockerBuilder, DockerCommand, DockerError, DockerfileConfig,
-    parser::docker_file::DockerfileParser,
-};
+use crate::config::docker_file::{DockerCommand, DockerfileConfig};
+use crate::{DockerBuilder, DockerError, parser::docker_file::DockerfileParser};
 use bollard::container::ListContainersOptions;
-use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::process::Command;
 

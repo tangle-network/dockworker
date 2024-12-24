@@ -1,7 +1,7 @@
 use super::docker_file::is_docker_running;
 use crate::{
     DockerBuilder,
-    config::compose::{ComposeConfig, HealthCheck, ServiceConfig},
+    config::compose::{ComposeConfig, HealthCheck, Service},
 };
 use futures_util::TryStreamExt;
 use std::collections::HashMap;
@@ -33,7 +33,7 @@ async fn test_healthcheck() {
 
     // Create a service with healthcheck
     let mut services = HashMap::new();
-    services.insert("healthy-service".to_string(), ServiceConfig {
+    services.insert("healthy-service".to_string(), Service {
         image: Some("nginx:latest".to_string()),
         healthcheck: Some(HealthCheck {
             test: vec![

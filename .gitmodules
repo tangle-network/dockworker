@@ -1,0 +1,3 @@
+[submodule "fixtures/simple-optimism-node"]
+	path = fixtures/simple-optimism-node
+	url = https://github.com/smartcontracts/simple-optimism-node.git
