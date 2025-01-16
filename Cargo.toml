@@ -31,7 +31,7 @@ shell-words = "1.1"
 thiserror = "2.0"
 
 # Optional dependencies (only with deploy feature)
-bollard = { version = "0.14", optional = true }
+bollard = { version = "0.18", optional = true }
 futures-util = { version = "0.3", optional = true }
 ipnet = { version = "2.10.1", optional = true }
 tar = { version = "0.4.43", optional = true }
