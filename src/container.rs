@@ -11,10 +11,9 @@ use bollard::models::{
 	ContainerConfig, ContainerCreateResponse, ContainerInspectResponse, HostConfig,
 	MountPointTypeEnum,
 };
-use bollard::{Docker, API_DEFAULT_VERSION};
+use bollard::Docker;
 use core::str::FromStr;
 use std::collections::HashMap;
-use std::sync::Arc;
 use futures_util::{Stream, StreamExt};
 
 #[derive(thiserror::Error, Debug)]
