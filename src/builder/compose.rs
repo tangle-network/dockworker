@@ -360,6 +360,7 @@ impl DockerBuilder {
             timeout: Some(health.timeout.as_nanos() as i64),
             retries: Some(health.retries as i64),
             start_period: None,
+            start_interval: None,
         }
     }
 
