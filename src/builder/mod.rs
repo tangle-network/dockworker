@@ -1,5 +1,5 @@
-use std::ops::Deref;
 use bollard::Docker;
+use std::ops::Deref;
 
 pub mod compose;
 pub mod docker_file;
