@@ -173,7 +173,7 @@ with_docker_cleanup!(test_compose_deployment, async |test_id: &str| {
         return;
     }
 
-    let builder = DockerBuilder::new().unwrap();
+    let builder = DockerBuilder::new().await.unwrap();
     let network_name = format!("test-network-{}", test_id);
 
     let mut labels = HashMap::new();
@@ -255,7 +255,7 @@ with_docker_cleanup!(test_compose_deployment, async |test_id: &str| {
 });
 
 with_docker_cleanup!(test_compose_with_build, async |_: &str| {
-    let builder = DockerBuilder::new().unwrap();
+    let builder = DockerBuilder::new().await.unwrap();
 
     // Create a compose config with build context
     let mut services = HashMap::new();

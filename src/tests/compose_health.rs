@@ -15,7 +15,7 @@ with_docker_cleanup!(test_healthcheck, async |test_id: &str| {
         return;
     }
 
-    let builder = DockerBuilder::new().unwrap();
+    let builder = DockerBuilder::new().await.unwrap();
     let network_name = format!("test-network-{}", test_id);
 
     let mut network_labels = HashMap::new();

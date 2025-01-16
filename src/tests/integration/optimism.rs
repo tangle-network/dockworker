@@ -18,7 +18,7 @@ pub struct OptimismTestContext {
 
 impl OptimismTestContext {
     pub async fn new(test_id: &str) -> Result<Self, crate::error::DockerError> {
-        let builder = DockerBuilder::new()?;
+        let builder = DockerBuilder::new().await?;
 
         // Create test directory under the common test base
         let test_dir = PathBuf::from(TEST_BASE_DIR)

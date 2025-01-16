@@ -7,7 +7,7 @@ use std::{collections::HashMap, time::Duration};
 use uuid::Uuid;
 
 with_docker_cleanup!(test_network_management, async |test_id: &str| {
-    let builder = DockerBuilder::new().unwrap();
+    let builder = DockerBuilder::new().await.unwrap();
     let network_name = format!("test-network-{}", Uuid::new_v4());
 
     let mut network_labels = HashMap::new();
@@ -33,7 +33,7 @@ with_docker_cleanup!(test_network_management, async |test_id: &str| {
 });
 
 with_docker_cleanup!(test_volume_management, async |test_id: &str| {
-    let builder = DockerBuilder::new().unwrap();
+    let builder = DockerBuilder::new().await.unwrap();
     let volume_name = format!("test-volume-{}", test_id);
 
     // Create volume
@@ -48,7 +48,7 @@ with_docker_cleanup!(test_volume_management, async |test_id: &str| {
 });
 
 with_docker_cleanup!(test_container_management, async |test_id: &str| {
-    let builder = DockerBuilder::new().unwrap();
+    let builder = DockerBuilder::new().await.unwrap();
     let unique_id = Uuid::new_v4();
     let container_name = format!("test-mgmt-{}-integration", unique_id);
     println!("Starting test with container name: {}", container_name);
