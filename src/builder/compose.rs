@@ -360,7 +360,6 @@ impl DockerBuilder {
             timeout: Some(health.timeout.as_nanos() as i64),
             retries: Some(health.retries as i64),
             start_period: None,
-            ..Default::default()
         }
     }
 
@@ -411,7 +410,7 @@ impl DockerBuilder {
             }
 
             // Create a temporary directory for the build context
-            let temp_dir = tempfile::tempdir().map_err(|e| DockerError::FileError(e.into()))?;
+            let temp_dir = tempfile::tempdir()?;
             let temp_dockerfile = temp_dir.path().join("Dockerfile");
 
             // Copy the Dockerfile to temp directory
@@ -481,7 +480,7 @@ impl DockerBuilder {
         };
 
         // Pull the image if it doesn't exist
-        if let Err(_) = self.client.inspect_image(&image).await {
+        if self.client.inspect_image(&image).await.is_err() {
             let mut pull_stream = self.client.create_image(
                 Some(bollard::image::CreateImageOptions {
                     from_image: image.as_str(),

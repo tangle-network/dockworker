@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt::Display;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DockerfileConfig {
@@ -80,16 +81,16 @@ impl DockerfileConfig {
         let mut content = format!("FROM {}\n", self.base_image);
 
         for command in &self.commands {
-            content.push_str(&format!("{}\n", command.to_string()));
+            content.push_str(&format!("{}\n", command));
         }
 
         content
     }
 }
 
-impl ToString for DockerCommand {
-    fn to_string(&self) -> String {
-        match self {
+impl Display for DockerCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
             DockerCommand::Add {
                 sources,
                 dest,
@@ -174,7 +175,7 @@ impl ToString for DockerCommand {
                 format!("LABEL {}", labels)
             }
             DockerCommand::Maintainer { name } => format!("MAINTAINER {}", name),
-            DockerCommand::Onbuild { command } => format!("ONBUILD {}", command.to_string()),
+            DockerCommand::Onbuild { command } => format!("ONBUILD {}", command),
             DockerCommand::Run { command } => format!("RUN {}", command),
             DockerCommand::Shell { shell } => format!("SHELL {}", shell_words::join(shell)),
             DockerCommand::StopSignal { signal } => format!("STOPSIGNAL {}", signal),
@@ -187,6 +188,7 @@ impl ToString for DockerCommand {
             }
             DockerCommand::Volume { paths } => format!("VOLUME {}", shell_words::join(paths)),
             DockerCommand::Workdir { path } => format!("WORKDIR {}", path),
-        }
+        };
+        write!(f, "{}", str)
     }
 }

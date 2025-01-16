@@ -92,7 +92,7 @@ impl ComposeConfig {
         for (service_name, service) in &self.services {
             if let Some(env) = &service.environment {
                 for var in vars {
-                    if !env.contains_key(*var) {
+                    if !env.contains_key(var) {
                         return Err(DockerError::ValidationError(format!(
                             "Service '{}' is missing required environment variable: {}",
                             service_name, var
@@ -323,7 +323,7 @@ impl ComposeConfig {
                 })?;
                 if entry.path().extension().and_then(|s| s.to_str()) == Some("env") {
                     println!("Loading common env file: {}", entry.path().display());
-                    match std::fs::read_to_string(&entry.path()) {
+                    match std::fs::read_to_string(entry.path()) {
                         Ok(content) => {
                             let file_vars =
                                 crate::parser::compose::ComposeParser::parse_env_file(&content)?;

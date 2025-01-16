@@ -42,20 +42,21 @@ impl DockerfileParser {
         };
 
         let mut current_command = String::new();
-        let mut lines = content.lines().peekable();
 
-        while let Some(line) = lines.next() {
+        for line in content.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
 
             // Handle line continuations
-            if line.ends_with('\\') {
-                current_command.push_str(&line[..line.len() - 1]);
+            if let Some(s) = line.strip_suffix('\\') {
+                current_command.push_str(s);
                 current_command.push(' ');
                 continue;
-            } else if !current_command.is_empty() {
+            }
+
+            if !current_command.is_empty() {
                 current_command.push_str(line);
                 Self::parse_command(&mut config, &current_command)?;
                 current_command.clear();
@@ -303,9 +304,8 @@ impl DockerfileParser {
                 let mut current_key = String::new();
                 let mut current_value = String::new();
                 let mut in_quotes = false;
-                let mut chars = args.chars().peekable();
 
-                while let Some(c) = chars.next() {
+                for c in args.chars() {
                     match c {
                         '"' => in_quotes = !in_quotes,
                         '=' if !in_quotes && current_key.is_empty() => {
@@ -323,11 +323,7 @@ impl DockerfileParser {
                             }
                         }
                         _ => {
-                            if current_key.is_empty() {
-                                current_value.push(c);
-                            } else {
-                                current_value.push(c);
-                            }
+                            current_value.push(c);
                         }
                     }
                 }

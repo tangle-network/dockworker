@@ -65,7 +65,7 @@ async fn test_dockerfile_parsing() {
     }
 
     // Verify EXPOSE commands
-    let expected_ports = vec![30333, 9933, 9944, 9615];
+    let expected_ports = [30333, 9933, 9944, 9615];
     for (i, port) in expected_ports.iter().enumerate() {
         match &commands[i + 5] {
             DockerCommand::Expose { port: p, protocol } => {
@@ -604,7 +604,7 @@ async fn test_expose_multiple_ports() {
     let content = "EXPOSE 30333 9933 9944 9615";
     let config = DockerfileParser::parse(content).unwrap();
 
-    let expected_ports = vec![30333, 9933, 9944, 9615];
+    let expected_ports = [30333, 9933, 9944, 9615];
     assert_eq!(config.commands.len(), expected_ports.len());
 
     for (i, port) in expected_ports.iter().enumerate() {
@@ -622,7 +622,7 @@ async fn test_expose_multiple_ports() {
     let config = DockerfileParser::parse(content).unwrap();
     assert_eq!(config.commands.len(), 4);
 
-    let expected = vec![
+    let expected = [
         (80, Some("tcp")),
         (443, None),
         (8080, Some("udp")),
@@ -648,7 +648,7 @@ async fn test_tangle_expose_format() {
     let content = "EXPOSE 30333 9933 9944 9615";
     let config = DockerfileParser::parse(content).unwrap();
 
-    let expected_ports = vec![30333, 9933, 9944, 9615];
+    let expected_ports = [30333, 9933, 9944, 9615];
     assert_eq!(config.commands.len(), expected_ports.len());
 
     for (i, expected_port) in expected_ports.iter().enumerate() {

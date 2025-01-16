@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct EnvironmentVars(HashMap<String, String>);
 
 impl<'de> Deserialize<'de> for EnvironmentVars {
@@ -50,12 +50,6 @@ impl<'de> Deserialize<'de> for EnvironmentVars {
         };
 
         Ok(EnvironmentVars(map))
-    }
-}
-
-impl Default for EnvironmentVars {
-    fn default() -> Self {
-        EnvironmentVars(HashMap::new())
     }
 }
 

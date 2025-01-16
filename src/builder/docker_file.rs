@@ -102,7 +102,7 @@ impl DockerBuilder {
         env: Option<Vec<String>>,
     ) -> Result<String, DockerError> {
         // Create a temporary directory for the build context
-        let temp_dir = tempfile::tempdir().map_err(|e| DockerError::FileError(e.into()))?;
+        let temp_dir = tempfile::tempdir()?;
         let dockerfile_path = temp_dir.path().join("Dockerfile");
 
         // Write the Dockerfile content from our config
