@@ -1,6 +1,6 @@
 use crate::config::docker_file::{DockerCommand, DockerfileConfig};
 use crate::{
-    DockerBuilder, DockerError, parser::docker_file::DockerfileParser, with_docker_cleanup,
+    parser::docker_file::DockerfileParser, with_docker_cleanup, DockerBuilder, DockerError,
 };
 use bollard::container::ListContainersOptions;
 use futures_util::TryStreamExt;
@@ -420,14 +420,10 @@ async fn test_all_dockerfile_commands() {
         ..
     }) = commands_iter.next()
     {
-        assert_eq!(*command, vec![
-            "curl",
-            "-f",
-            "http://localhost/",
-            "||",
-            "exit",
-            "1"
-        ]);
+        assert_eq!(
+            *command,
+            vec!["curl", "-f", "http://localhost/", "||", "exit", "1"]
+        );
         assert_eq!(interval.as_deref(), Some("30s"));
         assert_eq!(timeout.as_deref(), Some("10s"));
         assert_eq!(*retries, Some(3));
@@ -678,11 +674,14 @@ async fn test_tangle_expose_format() {
 async fn test_onbuild_commands() {
     // Test all possible ONBUILD combinations
     let test_cases = vec![
-        ("ONBUILD ADD . /app", DockerCommand::Add {
-            sources: vec![".".to_string()],
-            dest: "/app".to_string(),
-            chown: None,
-        }),
+        (
+            "ONBUILD ADD . /app",
+            DockerCommand::Add {
+                sources: vec![".".to_string()],
+                dest: "/app".to_string(),
+                chown: None,
+            },
+        ),
         (
             "ONBUILD COPY --chown=user:group src/ /app/",
             DockerCommand::Copy {
@@ -691,34 +690,55 @@ async fn test_onbuild_commands() {
                 chown: Some("user:group".to_string()),
             },
         ),
-        ("ONBUILD RUN cargo build", DockerCommand::Run {
-            command: "cargo build".to_string(),
-        }),
-        ("ONBUILD ENV APP_VERSION=1.0", DockerCommand::Env {
-            key: "APP_VERSION".to_string(),
-            value: "1.0".to_string(),
-        }),
-        ("ONBUILD WORKDIR /app", DockerCommand::Workdir {
-            path: "/app".to_string(),
-        }),
-        ("ONBUILD EXPOSE 8080", DockerCommand::Expose {
-            port: 8080,
-            protocol: None,
-        }),
-        ("ONBUILD USER app:app", DockerCommand::User {
-            user: "app".to_string(),
-            group: Some("app".to_string()),
-        }),
-        ("ONBUILD VOLUME /data", DockerCommand::Volume {
-            paths: vec!["/data".to_string()],
-        }),
-        ("ONBUILD LABEL version=1.0", DockerCommand::Label {
-            labels: {
-                let mut map = HashMap::new();
-                map.insert("version".to_string(), "1.0".to_string());
-                map
+        (
+            "ONBUILD RUN cargo build",
+            DockerCommand::Run {
+                command: "cargo build".to_string(),
             },
-        }),
+        ),
+        (
+            "ONBUILD ENV APP_VERSION=1.0",
+            DockerCommand::Env {
+                key: "APP_VERSION".to_string(),
+                value: "1.0".to_string(),
+            },
+        ),
+        (
+            "ONBUILD WORKDIR /app",
+            DockerCommand::Workdir {
+                path: "/app".to_string(),
+            },
+        ),
+        (
+            "ONBUILD EXPOSE 8080",
+            DockerCommand::Expose {
+                port: 8080,
+                protocol: None,
+            },
+        ),
+        (
+            "ONBUILD USER app:app",
+            DockerCommand::User {
+                user: "app".to_string(),
+                group: Some("app".to_string()),
+            },
+        ),
+        (
+            "ONBUILD VOLUME /data",
+            DockerCommand::Volume {
+                paths: vec!["/data".to_string()],
+            },
+        ),
+        (
+            "ONBUILD LABEL version=1.0",
+            DockerCommand::Label {
+                labels: {
+                    let mut map = HashMap::new();
+                    map.insert("version".to_string(), "1.0".to_string());
+                    map
+                },
+            },
+        ),
     ];
 
     for (content, expected_cmd) in test_cases {

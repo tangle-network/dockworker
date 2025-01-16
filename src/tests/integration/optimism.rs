@@ -1,6 +1,6 @@
-use crate::DockerBuilder;
 use crate::config::compose::ComposeConfig;
 use crate::parser::compose::ComposeParser;
+use crate::DockerBuilder;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

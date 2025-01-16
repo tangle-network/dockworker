@@ -1,4 +1,4 @@
-use crate::{DockerBuilder, with_docker_cleanup};
+use crate::{with_docker_cleanup, DockerBuilder};
 use bollard::container::{
     Config, CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
 };
