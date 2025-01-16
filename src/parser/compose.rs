@@ -427,6 +427,7 @@ impl ComposeParser {
 }
 
 #[cfg(test)]
+#[allow(clippy::literal_string_with_formatting_args)]
 mod tests {
     use super::*;
     use std::fs;

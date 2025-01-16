@@ -13,6 +13,7 @@ pub struct DockerTestContext {
 }
 
 impl DockerTestContext {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let client = Docker::connect_with_local_defaults().unwrap();
         let test_id = Uuid::new_v4().to_string();
@@ -190,6 +191,7 @@ pub struct TestGuard {
 }
 
 impl TestGuard {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let ctx = DockerTestContext::new();
 

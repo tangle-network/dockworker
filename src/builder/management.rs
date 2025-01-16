@@ -280,7 +280,7 @@ impl DockerBuilder {
             .volumes
             .unwrap_or_default()
             .into_iter()
-            .filter_map(|v| Some(v.name))
+            .map(|v| v.name)
             .collect())
     }
 

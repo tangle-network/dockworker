@@ -85,7 +85,7 @@ with_docker_cleanup!(test_healthcheck, async |test_id: &str| {
     let container_id = container_ids.get(&service_name).unwrap();
 
     // Wait for container to be healthy
-    builder.wait_for_container(&container_id).await.unwrap();
+    builder.wait_for_container(container_id).await.unwrap();
 
     // Verify healthcheck configuration
     let inspect = builder
