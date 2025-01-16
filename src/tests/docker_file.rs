@@ -20,7 +20,7 @@ pub fn is_docker_running() -> bool {
 
 #[tokio::test]
 async fn test_dockerfile_parsing() {
-    let builder = DockerBuilder::new().unwrap();
+    let builder = DockerBuilder::new().await.unwrap();
     let config = builder
         .from_dockerfile(get_tangle_dockerfile())
         .await
@@ -83,7 +83,7 @@ with_docker_cleanup!(test_dockerfile_deployment, async |test_id: &str| {
         return;
     }
 
-    let builder = DockerBuilder::new().unwrap();
+    let builder = DockerBuilder::new().await.unwrap();
     let network_name = format!("test-network-{}", test_id);
 
     let mut network_labels = HashMap::new();
