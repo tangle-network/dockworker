@@ -1,11 +1,10 @@
 use super::docker_file::is_docker_running;
 use crate::{
-    DockerBuilder,
     config::{
-        HealthCheck,
         compose::{ComposeConfig, Service},
+        HealthCheck,
     },
-    with_docker_cleanup,
+    with_docker_cleanup, DockerBuilder,
 };
 use futures_util::TryStreamExt;
 use std::{collections::HashMap, time::Duration};
@@ -56,22 +55,25 @@ with_docker_cleanup!(test_healthcheck, async |test_id: &str| {
     let mut labels = HashMap::new();
     labels.insert("test_id".to_string(), test_id.to_string());
 
-    services.insert(service_name.clone(), Service {
-        image: Some("nginx:latest".to_string()),
-        healthcheck: Some(HealthCheck {
-            endpoint: "http://localhost/".to_string(),
-            method: "GET".to_string(),
-            expected_status: 200,
-            body: None,
-            interval: Duration::from_secs(1),
-            timeout: Duration::from_secs(3),
-            retries: 3,
-        }),
-        ports: Some(vec!["8080:80".to_string()]),
-        networks: Some(vec![network_name.clone()]),
-        labels: Some(labels),
-        ..Default::default()
-    });
+    services.insert(
+        service_name.clone(),
+        Service {
+            image: Some("nginx:latest".to_string()),
+            healthcheck: Some(HealthCheck {
+                endpoint: "http://localhost/".to_string(),
+                method: "GET".to_string(),
+                expected_status: 200,
+                body: None,
+                interval: Duration::from_secs(1),
+                timeout: Duration::from_secs(3),
+                retries: 3,
+            }),
+            ports: Some(vec!["8080:80".to_string()]),
+            networks: Some(vec![network_name.clone()]),
+            labels: Some(labels),
+            ..Default::default()
+        },
+    );
 
     let mut config = ComposeConfig {
         version: "3".to_string(),

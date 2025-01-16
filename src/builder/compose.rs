@@ -1,5 +1,4 @@
 use crate::{
-    DockerBuilder,
     config::{
         compose::{ComposeConfig, Service},
         health::HealthCheck,
@@ -7,6 +6,7 @@ use crate::{
     },
     error::DockerError,
     parser::compose::ComposeParser,
+    DockerBuilder,
 };
 use bollard::container::{Config, CreateContainerOptions, StartContainerOptions};
 use bollard::network::CreateNetworkOptions;
@@ -42,10 +42,9 @@ impl DockerBuilder {
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let builder = DockerBuilder::new()?;
-    /// let config = builder.from_compose_with_env(
-    ///     Path::new("docker-compose.yml"),
-    ///     Path::new(".env")
-    /// ).await?;
+    /// let config = builder
+    ///     .from_compose_with_env(Path::new("docker-compose.yml"), Path::new(".env"))
+    ///     .await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -80,10 +79,9 @@ impl DockerBuilder {
     /// let builder = DockerBuilder::new()?;
     /// let mut env_vars = HashMap::new();
     /// env_vars.insert("VERSION".to_string(), "1.0".to_string());
-    /// let config = builder.from_compose_with_env_map(
-    ///     Path::new("docker-compose.yml"),
-    ///     &env_vars
-    /// ).await?;
+    /// let config = builder
+    ///     .from_compose_with_env_map(Path::new("docker-compose.yml"), &env_vars)
+    ///     .await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -114,7 +112,9 @@ impl DockerBuilder {
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let builder = DockerBuilder::new()?;
-    /// let config = builder.from_compose(Path::new("docker-compose.yml")).await?;
+    /// let config = builder
+    ///     .from_compose(Path::new("docker-compose.yml"))
+    ///     .await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -154,10 +154,9 @@ impl DockerBuilder {
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let builder = DockerBuilder::new()?;
     /// let mut config = ComposeParser::from_file(Path::new("docker-compose.yml")).await?;
-    /// let container_ids = builder.deploy_compose_with_base_dir(
-    ///     &mut config,
-    ///     std::env::current_dir()?
-    /// ).await?;
+    /// let container_ids = builder
+    ///     .deploy_compose_with_base_dir(&mut config, std::env::current_dir()?)
+    ///     .await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -202,12 +201,14 @@ impl DockerBuilder {
     /// # use dockworker::parser::ComposeParser;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let builder = DockerBuilder::new()?;
-    /// let mut config = ComposeParser::parse(r#"
+    /// let mut config = ComposeParser::parse(
+    ///     r#"
     ///   version: "3"
     ///   services:
     ///     web:
     ///       image: nginx
-    /// "#)?;
+    /// "#,
+    /// )?;
     /// let container_ids = builder.deploy_compose(&mut config).await?;
     /// # Ok(())
     /// # }

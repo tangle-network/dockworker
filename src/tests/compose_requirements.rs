@@ -1,11 +1,10 @@
 use super::docker_file::is_docker_running;
-use crate::DockerError;
 use crate::builder::compose::parse_memory_string;
 use crate::config::SystemRequirements;
+use crate::DockerError;
 use crate::{
-    DockerBuilder,
     config::compose::{ComposeConfig, Service},
-    with_docker_cleanup,
+    with_docker_cleanup, DockerBuilder,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -40,26 +39,29 @@ with_docker_cleanup!(test_resource_limits, async |test_id: &str| {
     let mut labels = HashMap::new();
     labels.insert("test_id".to_string(), test_id.to_string());
 
-    services.insert(service_name.clone(), Service {
-        image: Some("alpine:latest".to_string()),
-        command: Some(vec!["sleep".to_string(), "30".to_string()]),
-        requirements: Some(SystemRequirements {
-            min_memory_gb: 1,
-            min_disk_gb: 1,
-            min_bandwidth_mbps: 100,
-            required_ports: vec![],
-            data_directory: "/tmp".to_string(),
-            cpu_limit: Some(0.5),
-            memory_limit: Some("512M".to_string()),
-            memory_swap: Some("1G".to_string()),
-            memory_reservation: Some("256M".to_string()),
-            cpu_shares: Some(512),
-            cpuset_cpus: Some("0,1".to_string()),
-        }),
-        networks: Some(vec![network_name.clone()]),
-        labels: Some(labels),
-        ..Default::default()
-    });
+    services.insert(
+        service_name.clone(),
+        Service {
+            image: Some("alpine:latest".to_string()),
+            command: Some(vec!["sleep".to_string(), "30".to_string()]),
+            requirements: Some(SystemRequirements {
+                min_memory_gb: 1,
+                min_disk_gb: 1,
+                min_bandwidth_mbps: 100,
+                required_ports: vec![],
+                data_directory: "/tmp".to_string(),
+                cpu_limit: Some(0.5),
+                memory_limit: Some("512M".to_string()),
+                memory_swap: Some("1G".to_string()),
+                memory_reservation: Some("256M".to_string()),
+                cpu_shares: Some(512),
+                cpuset_cpus: Some("0,1".to_string()),
+            }),
+            networks: Some(vec![network_name.clone()]),
+            labels: Some(labels),
+            ..Default::default()
+        },
+    );
 
     let mut config = ComposeConfig {
         version: "3".to_string(),

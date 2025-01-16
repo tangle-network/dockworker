@@ -1,5 +1,5 @@
-use super::EnvironmentVars;
 use super::volume::VolumeType;
+use super::EnvironmentVars;
 use crate::config::health::HealthCheck;
 use crate::config::requirements::SystemRequirements;
 use crate::error::DockerError;

@@ -1,6 +1,6 @@
 use crate::{
-    VolumeType, builder::compose::parse_memory_string, parser::ComposeParser,
-    tests::docker_file::is_docker_running, with_docker_cleanup,
+    builder::compose::parse_memory_string, parser::ComposeParser,
+    tests::docker_file::is_docker_running, with_docker_cleanup, VolumeType,
 };
 use bollard::container::ListContainersOptions;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
@@ -194,15 +194,18 @@ with_docker_cleanup!(test_compose_deployment, async |test_id: &str| {
     labels.insert("test_id".to_string(), test_id.to_string());
 
     let service_name = format!("test-service-{}", test_id);
-    services.insert(service_name, Service {
-        image: Some("alpine:latest".to_string()),
-        ports: Some(vec!["8080:80".to_string()]),
-        environment: Some(env.into()),
-        volumes: None,
-        networks: Some(vec![network_name.clone()]),
-        labels: Some(labels),
-        ..Service::default()
-    });
+    services.insert(
+        service_name,
+        Service {
+            image: Some("alpine:latest".to_string()),
+            ports: Some(vec!["8080:80".to_string()]),
+            environment: Some(env.into()),
+            volumes: None,
+            networks: Some(vec![network_name.clone()]),
+            labels: Some(labels),
+            ..Service::default()
+        },
+    );
 
     let mut config = ComposeConfig {
         version: "3".to_string(),
@@ -256,26 +259,29 @@ with_docker_cleanup!(test_compose_with_build, async |_: &str| {
 
     // Create a compose config with build context
     let mut services = HashMap::new();
-    services.insert("test-build-service".to_string(), Service {
-        image: None,
-        build: Some(BuildConfig {
-            context: "./".to_string(),
-            dockerfile: Some("Dockerfile".to_string()),
-        }),
-        ports: None,
-        environment: None,
-        volumes: None,
-        networks: None,
-        requirements: None,
-        depends_on: None,
-        healthcheck: None,
-        restart: None,
-        command: None,
-        user: None,
-        labels: None,
-        platform: None,
-        env_file: None,
-    });
+    services.insert(
+        "test-build-service".to_string(),
+        Service {
+            image: None,
+            build: Some(BuildConfig {
+                context: "./".to_string(),
+                dockerfile: Some("Dockerfile".to_string()),
+            }),
+            ports: None,
+            environment: None,
+            volumes: None,
+            networks: None,
+            requirements: None,
+            depends_on: None,
+            healthcheck: None,
+            restart: None,
+            command: None,
+            user: None,
+            labels: None,
+            platform: None,
+            env_file: None,
+        },
+    );
 
     let mut config = ComposeConfig {
         version: "3".to_string(),

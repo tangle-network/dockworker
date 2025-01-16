@@ -14,23 +14,20 @@ use std::path::Path;
 /// # Examples
 ///
 /// ```rust,no_run
-/// use std::path::Path;
 /// use dockworker::parser::ComposeParser;
+/// use std::path::Path;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// // Parse a compose file with environment variables from a .env file
-/// let config = ComposeParser::from_file_with_env(
-///     Path::new("docker-compose.yml"),
-///     Path::new(".env")
-/// ).await?;
+/// let config =
+///     ComposeParser::from_file_with_env(Path::new("docker-compose.yml"), Path::new(".env"))
+///         .await?;
 ///
 /// // Parse a compose file with explicit environment variables
 /// let mut env_vars = std::collections::HashMap::new();
 /// env_vars.insert("VERSION".to_string(), "1.0".to_string());
-/// let config = ComposeParser::from_file_with_env_map(
-///     Path::new("docker-compose.yml"),
-///     &env_vars
-/// ).await?;
+/// let config =
+///     ComposeParser::from_file_with_env_map(Path::new("docker-compose.yml"), &env_vars).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -85,10 +82,9 @@ impl ComposeParser {
     /// # use std::path::Path;
     /// # use dockworker::parser::ComposeParser;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let config = ComposeParser::from_file_with_env(
-    ///     Path::new("docker-compose.yml"),
-    ///     Path::new(".env")
-    /// ).await?;
+    /// let config =
+    ///     ComposeParser::from_file_with_env(Path::new("docker-compose.yml"), Path::new(".env"))
+    ///         .await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -135,10 +131,8 @@ impl ComposeParser {
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let mut env_vars = HashMap::new();
     /// env_vars.insert("VERSION".to_string(), "1.0".to_string());
-    /// let config = ComposeParser::from_file_with_env_map(
-    ///     Path::new("docker-compose.yml"),
-    ///     &env_vars
-    /// ).await?;
+    /// let config =
+    ///     ComposeParser::from_file_with_env_map(Path::new("docker-compose.yml"), &env_vars).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -281,8 +275,8 @@ impl ComposeParser {
     /// # Examples
     ///
     /// ```
-    /// use std::path::Path;
     /// use std::fs::write;
+    /// use std::path::Path;
     /// use tempfile::NamedTempFile;
     /// # use dockworker::parser::compose::ComposeParser;
     /// # use dockworker::error::DockerError;

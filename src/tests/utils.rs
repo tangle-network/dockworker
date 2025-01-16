@@ -1,7 +1,7 @@
-use bollard::Docker;
 use bollard::container::ListContainersOptions;
 use bollard::network::ListNetworksOptions;
 use bollard::volume::ListVolumesOptions;
+use bollard::Docker;
 use std::collections::HashMap;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
@@ -28,18 +28,21 @@ impl DockerTestContext {
 
         // Clean up containers by label
         let mut label_filters = HashMap::new();
-        label_filters.insert(String::from("label"), vec![format!(
-            "test_id={}",
-            self.test_id
-        )]);
+        label_filters.insert(
+            String::from("label"),
+            vec![format!("test_id={}", self.test_id)],
+        );
 
         // Also match containers by name pattern
         let mut name_filters = HashMap::new();
-        name_filters.insert(String::from("name"), vec![
-            format!("healthy-service-{}", self.test_id),
-            format!("test-service-{}", self.test_id),
-            format!("optimism-test-{}", self.test_id),
-        ]);
+        name_filters.insert(
+            String::from("name"),
+            vec![
+                format!("healthy-service-{}", self.test_id),
+                format!("test-service-{}", self.test_id),
+                format!("optimism-test-{}", self.test_id),
+            ],
+        );
 
         // Try both label and name filters
         for filters in [label_filters, name_filters] {
@@ -85,10 +88,10 @@ impl DockerTestContext {
         // Clean up networks - handle both label and name patterns
         let mut network_filters = HashMap::new();
         // Match networks with test_id label
-        network_filters.insert(String::from("label"), vec![format!(
-            "test_id={}",
-            self.test_id
-        )]);
+        network_filters.insert(
+            String::from("label"),
+            vec![format!("test_id={}", self.test_id)],
+        );
 
         if let Ok(networks) = self
             .client
@@ -110,11 +113,14 @@ impl DockerTestContext {
 
         // Also match networks by name pattern
         let mut name_filters = HashMap::new();
-        name_filters.insert(String::from("name"), vec![
-            format!("test-network-{}", self.test_id),
-            format!("compose_network_{}", self.test_id),
-            format!("optimism-test-{}", self.test_id),
-        ]);
+        name_filters.insert(
+            String::from("name"),
+            vec![
+                format!("test-network-{}", self.test_id),
+                format!("compose_network_{}", self.test_id),
+                format!("optimism-test-{}", self.test_id),
+            ],
+        );
 
         if let Ok(networks) = self
             .client
@@ -136,20 +142,23 @@ impl DockerTestContext {
 
         // Clean up volumes by label
         let mut label_filters = HashMap::new();
-        label_filters.insert(String::from("label"), vec![format!(
-            "test_id={}",
-            self.test_id
-        )]);
+        label_filters.insert(
+            String::from("label"),
+            vec![format!("test_id={}", self.test_id)],
+        );
 
         // Also match volumes by name pattern
         let mut name_filters = HashMap::new();
-        name_filters.insert(String::from("name"), vec![
-            format!("test-volume-{}", self.test_id),
-            format!("reth_data_{}", self.test_id),
-            format!("reth_jwt_{}", self.test_id),
-            format!("nimbus_data_{}", self.test_id),
-            format!("optimism_data_{}", self.test_id),
-        ]);
+        name_filters.insert(
+            String::from("name"),
+            vec![
+                format!("test-volume-{}", self.test_id),
+                format!("reth_data_{}", self.test_id),
+                format!("reth_jwt_{}", self.test_id),
+                format!("nimbus_data_{}", self.test_id),
+                format!("optimism_data_{}", self.test_id),
+            ],
+        );
 
         // Try both label and name filters for volumes
         for filters in [label_filters, name_filters] {

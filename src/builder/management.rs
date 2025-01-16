@@ -1,5 +1,5 @@
-use crate::DockerBuilder;
 use crate::error::DockerError;
+use crate::DockerBuilder;
 use bollard::container::LogsOptions;
 use bollard::exec::{CreateExecOptions, StartExecOptions};
 use bollard::network::CreateNetworkOptions;
@@ -27,12 +27,9 @@ impl DockerBuilder {
     /// let mut labels = HashMap::new();
     /// labels.insert("env".to_string(), "prod".to_string());
     ///
-    /// builder.create_network_with_retry(
-    ///     "my-network",
-    ///     3,
-    ///     Duration::from_secs(1),
-    ///     Some(labels)
-    /// ).await?;
+    /// builder
+    ///     .create_network_with_retry("my-network", 3, Duration::from_secs(1), Some(labels))
+    ///     .await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -128,7 +125,9 @@ impl DockerBuilder {
     /// builder.pull_image("ubuntu:latest", None).await?;
     ///
     /// // Pull with specific platform
-    /// builder.pull_image("ubuntu:latest", Some("linux/arm64")).await?;
+    /// builder
+    ///     .pull_image("ubuntu:latest", Some("linux/arm64"))
+    ///     .await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -389,13 +388,16 @@ impl DockerBuilder {
     ) -> Result<String, DockerError> {
         let exec = self
             .get_client()
-            .create_exec(container_id, CreateExecOptions::<String> {
-                attach_stdout: Some(true),
-                attach_stderr: Some(true),
-                cmd: Some(cmd.into_iter().map(|c| c.to_string()).collect()),
-                env: env.map(|e| e.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect()),
-                ..Default::default()
-            })
+            .create_exec(
+                container_id,
+                CreateExecOptions::<String> {
+                    attach_stdout: Some(true),
+                    attach_stderr: Some(true),
+                    cmd: Some(cmd.into_iter().map(|c| c.to_string()).collect()),
+                    env: env.map(|e| e.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect()),
+                    ..Default::default()
+                },
+            )
             .await
             .map_err(DockerError::BollardError)?;
 
