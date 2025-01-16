@@ -1,3 +1,5 @@
+#![allow(unknown_lints)]
+
 pub use config::{
     compose::{BuildConfig, ComposeConfig, Service},
     volume::VolumeType,
