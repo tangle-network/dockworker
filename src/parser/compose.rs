@@ -17,17 +17,15 @@ use std::path::{Path, PathBuf};
 ///
 /// ```rust,no_run
 /// use dockworker::parser::ComposeParser;
-/// use std::path::Path;
 ///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // Parse a compose file with environment variables from a .env file
 /// let compose_path = "docker-compose.yml";
 /// let env_path = ".env";
 ///
 /// let config = ComposeParser::new()
 ///     .env_file(env_path)
-///     .parse_from_path(compose_path)
-///     .await?;
+///     .parse_from_path(compose_path)?;
 ///
 /// // Parse a compose file with explicit environment variables
 /// let mut env_vars = std::collections::HashMap::new();
@@ -35,8 +33,7 @@ use std::path::{Path, PathBuf};
 ///
 /// let config = ComposeParser::new()
 ///     .env_vars(env_vars)
-///     .parse_from_path(compose_path)
-///     .await?;
+///     .parse_from_path(compose_path)?;
 /// # Ok(()) }
 /// ```
 #[derive(Default, Clone)]
@@ -55,12 +52,9 @@ impl ComposeParser {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use std::path::Path;
-    /// # use dockworker::parser::ComposeParser;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let config = ComposeParser::new()
-    ///     .parse_from_path("docker-compose.yml")
-    ///     .await?;
+    /// use dockworker::parser::ComposeParser;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let config = ComposeParser::new().parse_from_path("docker-compose.yml")?;
     /// # Ok(())
     /// # }
     /// ```
