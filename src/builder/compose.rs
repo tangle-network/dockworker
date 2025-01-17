@@ -2,7 +2,7 @@ use crate::{
     config::{
         compose::{ComposeConfig, Service},
         health::HealthCheck,
-        volume::VolumeType,
+        volume::Volume,
     },
     error::DockerError,
     DockerBuilder,
@@ -139,7 +139,7 @@ impl DockerBuilder {
 
         // Create volumes defined in the compose file
         for (volume_name, volume_type) in &config.volumes {
-            if let VolumeType::Named(_) = volume_type {
+            if let Volume::Named(_) = volume_type {
                 self.client
                     .create_volume(bollard::volume::CreateVolumeOptions {
                         name: volume_name.to_string(),
@@ -202,7 +202,7 @@ impl DockerBuilder {
 
         // Configure mounts if volumes are specified
         if let Some(volumes) = &service.volumes {
-            let mounts: Vec<Mount> = volumes.iter().map(|vol| vol.to_mount()).collect();
+            let mounts: Vec<Mount> = volumes.iter().cloned().map(Mount::from).collect();
             host_config.mounts = Some(mounts);
         }
 
@@ -493,7 +493,7 @@ impl DockerBuilder {
         for service in config.services.values_mut() {
             if let Some(volumes) = &mut service.volumes {
                 for volume in volumes.iter_mut() {
-                    if let VolumeType::Bind { source, .. } = volume {
+                    if let Volume::Bind { source, .. } = volume {
                         let absolute_path = Self::normalize_path(&base, source)?;
                         *source = absolute_path.to_string_lossy().into_owned();
                     }

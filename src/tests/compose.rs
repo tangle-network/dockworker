@@ -2,7 +2,7 @@ use crate::config::requirements::parse_memory_string;
 use crate::parser::ComposeParser;
 use crate::tests::docker_file::is_docker_running;
 use crate::tests::utils::with_docker_cleanup;
-use crate::VolumeType;
+use crate::Volume;
 use bollard::container::ListContainersOptions;
 use color_eyre::Result;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
@@ -52,7 +52,7 @@ fn test_compose_parsing() {
     assert_eq!(volumes.len(), 1);
 
     match &volumes[0] {
-        VolumeType::Bind {
+        Volume::Bind {
             source,
             target,
             read_only,
@@ -111,16 +111,14 @@ fn test_reth_archive_compose_parsing() {
     // Test reth service volumes
     let reth_volumes = reth.volumes.as_ref().unwrap();
     assert_eq!(reth_volumes.len(), 2);
-    assert!(matches!(&reth_volumes[0], VolumeType::Named(name) if name == "reth_data:/data"));
-    assert!(matches!(&reth_volumes[1], VolumeType::Named(name) if name == "reth_jwt:/jwt:ro"));
+    assert!(matches!(&reth_volumes[0], Volume::Named(name) if name == "reth_data:/data"));
+    assert!(matches!(&reth_volumes[1], Volume::Named(name) if name == "reth_jwt:/jwt:ro"));
 
     // Test nimbus service volumes
     let nimbus_volumes = nimbus.volumes.as_ref().unwrap();
     assert_eq!(nimbus_volumes.len(), 2);
-    assert!(matches!(&nimbus_volumes[0], VolumeType::Named(name) if name == "nimbus_data:/data"));
-    assert!(
-        matches!(&nimbus_volumes[1], VolumeType::Named(name) if name == "reth_jwt:/jwt/reth:ro")
-    );
+    assert!(matches!(&nimbus_volumes[0], Volume::Named(name) if name == "nimbus_data:/data"));
+    assert!(matches!(&nimbus_volumes[1], Volume::Named(name) if name == "reth_jwt:/jwt/reth:ro"));
 }
 
 #[test]
@@ -322,8 +320,8 @@ fn test_volume_validation() {
 
     let service = Service {
         volumes: Some(vec![
-            VolumeType::Named("test-data:/data".to_string()),
-            VolumeType::Bind {
+            Volume::Named("test-data:/data".to_string()),
+            Volume::Bind {
                 source: PathBuf::from("/host").to_string_lossy().to_string(),
                 target: "/container".to_string(),
                 read_only: false,
@@ -350,7 +348,7 @@ fn test_volume_validation() {
 // Sync tests that don't need Docker cleanup
 #[test]
 fn test_volume_serialization() {
-    let volume = VolumeType::Bind {
+    let volume = Volume::Bind {
         source: PathBuf::from("/host").to_string_lossy().to_string(),
         target: "/container".to_string(),
         read_only: true,
@@ -372,7 +370,7 @@ fn test_service_deployment() {
     let mut config = ComposeConfig::default();
     let service = Service {
         image: Some("nginx:latest".to_string()),
-        volumes: Some(vec![crate::VolumeType::Bind {
+        volumes: Some(vec![crate::Volume::Bind {
             source: PathBuf::from("/host/data").to_string_lossy().to_string(),
             target: "/container/data".to_string(),
             read_only: false,

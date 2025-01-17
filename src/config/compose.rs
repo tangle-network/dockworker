@@ -1,4 +1,4 @@
-use super::volume::VolumeType;
+use super::volume::Volume;
 use super::EnvironmentVars;
 use crate::config::health::HealthCheck;
 use crate::config::requirements::SystemRequirements;
@@ -19,7 +19,7 @@ pub struct Service {
     pub command: Option<Vec<String>>,
     pub environment: Option<EnvironmentVars>,
     pub env_file: Option<Vec<String>>,
-    pub volumes: Option<Vec<VolumeType>>,
+    pub volumes: Option<Vec<Volume>>,
     pub depends_on: Option<Vec<String>>,
     pub ports: Option<Vec<String>>,
     pub networks: Option<Vec<String>>,
@@ -74,7 +74,7 @@ pub struct ComposeConfig {
     pub services: HashMap<String, Service>,
     /// Map of volume name to volume configuration
     #[serde(default)]
-    pub volumes: HashMap<String, VolumeType>,
+    pub volumes: HashMap<String, Volume>,
 }
 
 impl Default for ComposeConfig {
@@ -200,7 +200,7 @@ impl ComposeConfig {
         for service in self.services.values() {
             if let Some(volumes) = &service.volumes {
                 for volume in volumes {
-                    if let VolumeType::Named(name) = volume {
+                    if let Volume::Named(name) = volume {
                         let volume_name = name.split(':').next().unwrap_or(name).to_string();
                         if !self.volumes.contains_key(&volume_name) {
                             used_volumes.insert(volume_name, volume.clone());
@@ -217,16 +217,16 @@ impl ComposeConfig {
     /// Resolves environment variables in the configuration
     pub fn resolve_env(&mut self, env_vars: &HashMap<String, String>) {
         // Helper function to resolve env vars in a volume
-        fn resolve_volume(volume: &mut VolumeType, env_vars: &HashMap<String, String>) {
+        fn resolve_volume(volume: &mut Volume, env_vars: &HashMap<String, String>) {
             match volume {
-                VolumeType::Named(name) => {
+                Volume::Named(name) => {
                     *name = ComposeConfig::resolve_env_value(name, env_vars);
                 }
-                VolumeType::Bind { source, target, .. } => {
+                Volume::Bind { source, target, .. } => {
                     *source = ComposeConfig::resolve_env_value(source, env_vars);
                     *target = ComposeConfig::resolve_env_value(target, env_vars);
                 }
-                VolumeType::Config {
+                Volume::Config {
                     name,
                     driver,
                     driver_opts,

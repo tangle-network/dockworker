@@ -2,7 +2,7 @@
 
 pub use config::{
     compose::{BuildConfig, ComposeConfig, Service},
-    volume::VolumeType,
+    volume::Volume,
 };
 pub use error::DockerError;
 
