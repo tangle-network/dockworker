@@ -3,26 +3,9 @@ name = "dockworker"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = []
-docker = [
-    "async-trait",
-    "bollard",
-    "futures",
-    "futures-util",
-    "ipnet",
-    "reqwest",
-    "tar",
-    "tempfile",
-    "tokio",
-    "tracing",
-    "sysinfo",
-    "uuid",
-    "walkdir",
-]
-
 [dependencies]
 # Core dependencies (always included)
+cfg-if = "1.0.0"
 regex = "1.11.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -46,9 +29,30 @@ futures = { version = "0.3.31", optional = true }
 walkdir = { version = "2.5.0", optional = true }
 tracing = { version = "0.1.41", optional = true }
 
+# Used in tests
+color-eyre = { version = "0.6.3", optional = true }
+
 [dev-dependencies]
-dockworker = { path = ".", features = ["docker"] }
+dockworker = { path = ".", features = ["docker", "testing"] }
 tokio = { version = "1.0", features = ["full"] }
 pretty_assertions = "1.4.1"
 reqwest = "0.12.12"
 
+[features]
+default = []
+docker = [
+	"async-trait",
+	"bollard",
+	"futures",
+	"futures-util",
+	"ipnet",
+	"reqwest",
+	"tar",
+	"tempfile",
+	"tokio",
+	"tracing",
+	"sysinfo",
+	"uuid",
+	"walkdir",
+]
+testing = ["dep:color-eyre"]

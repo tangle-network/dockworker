@@ -1,11 +1,72 @@
+use crate::DockerError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DockerfileConfig {
     pub base_image: String,
     pub commands: Vec<DockerCommand>,
+}
+
+impl DockerfileConfig {
+    /// Parse a Dockerfile
+    ///
+    /// This handles basic Dockerfile syntax including:
+    /// - Line continuations with backslash
+    /// - Comments starting with #
+    /// - Basic Dockerfile commands like FROM, COPY, etc.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use dockworker::config::DockerfileConfig;
+    ///
+    /// let content = r#"
+    /// FROM ubuntu:latest
+    /// COPY . /app
+    /// RUN cargo build
+    /// "#;
+    ///
+    /// let config = DockerfileConfig::parse(content).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DockerError::DockerfileError`] if:
+    /// - Command syntax is invalid
+    /// - Required arguments are missing
+    /// - Command is not recognized
+    pub fn parse<S: AsRef<str>>(content: S) -> Result<DockerfileConfig, DockerError> {
+        crate::parser::docker_file::parse(content.as_ref())
+    }
+
+    /// Parse a Dockerfile configuration from a file
+    ///
+    /// See [`DockerfileConfig::parse`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use dockworker::config::DockerfileConfig;
+    ///
+    /// let config = DockerfileConfig::parse_from_path("Dockerfile").unwrap();
+    /// ```
+    pub fn parse_from_path<P: AsRef<Path>>(path: P) -> Result<DockerfileConfig, DockerError> {
+        let content = std::fs::read_to_string(path.as_ref())?;
+        Self::parse(content)
+    }
+}
+
+impl Display for DockerfileConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "FROM {}", self.base_image)?;
+        for command in &self.commands {
+            writeln!(f, "{}", command)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -74,18 +135,6 @@ pub enum DockerCommand {
     Workdir {
         path: String,
     },
-}
-
-impl DockerfileConfig {
-    pub fn to_dockerfile_content(&self) -> String {
-        let mut content = format!("FROM {}\n", self.base_image);
-
-        for command in &self.commands {
-            content.push_str(&format!("{}\n", command));
-        }
-
-        content
-    }
 }
 
 impl Display for DockerCommand {

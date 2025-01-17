@@ -1,15 +1,14 @@
-use crate::{
-    builder::compose::parse_memory_string, parser::ComposeParser,
-    tests::docker_file::is_docker_running, with_docker_cleanup, VolumeType,
-};
-use bollard::container::ListContainersOptions;
-use std::{collections::HashMap, path::PathBuf, time::Duration};
+#![allow(clippy::literal_string_with_formatting_args)]
 
-use crate::{BuildConfig, ComposeConfig, DockerBuilder, Service};
+use crate::parser::env;
+use crate::parser::ComposeParser;
+use crate::test_fixtures::{get_local_reth_compose, get_reth_archive_compose};
+use crate::{ComposeConfig, Service, Volume};
+use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
+use tempfile::NamedTempFile;
 
-use super::fixtures::{get_local_reth_compose, get_reth_archive_compose};
-
-// Sync tests that don't need Docker cleanup
 #[test]
 fn test_compose_parsing() {
     let yaml = r#"
@@ -50,7 +49,7 @@ fn test_compose_parsing() {
     assert_eq!(volumes.len(), 1);
 
     match &volumes[0] {
-        VolumeType::Bind {
+        Volume::Bind {
             source,
             target,
             read_only,
@@ -65,8 +64,8 @@ fn test_compose_parsing() {
 
 #[test]
 fn test_reth_archive_compose_parsing() {
-    let content = std::fs::read_to_string(get_reth_archive_compose()).unwrap();
-    let config = ComposeParser::parse(&content).unwrap();
+    let content = std::fs::read(get_reth_archive_compose()).unwrap();
+    let config = ComposeParser::new().parse(&mut content.as_slice()).unwrap();
 
     assert_eq!(config.version, "2");
     assert_eq!(config.services.len(), 2);
@@ -109,22 +108,20 @@ fn test_reth_archive_compose_parsing() {
     // Test reth service volumes
     let reth_volumes = reth.volumes.as_ref().unwrap();
     assert_eq!(reth_volumes.len(), 2);
-    assert!(matches!(&reth_volumes[0], VolumeType::Named(name) if name == "reth_data:/data"));
-    assert!(matches!(&reth_volumes[1], VolumeType::Named(name) if name == "reth_jwt:/jwt:ro"));
+    assert!(matches!(&reth_volumes[0], Volume::Named(name) if name == "reth_data:/data"));
+    assert!(matches!(&reth_volumes[1], Volume::Named(name) if name == "reth_jwt:/jwt:ro"));
 
     // Test nimbus service volumes
     let nimbus_volumes = nimbus.volumes.as_ref().unwrap();
     assert_eq!(nimbus_volumes.len(), 2);
-    assert!(matches!(&nimbus_volumes[0], VolumeType::Named(name) if name == "nimbus_data:/data"));
-    assert!(
-        matches!(&nimbus_volumes[1], VolumeType::Named(name) if name == "reth_jwt:/jwt/reth:ro")
-    );
+    assert!(matches!(&nimbus_volumes[0], Volume::Named(name) if name == "nimbus_data:/data"));
+    assert!(matches!(&nimbus_volumes[1], Volume::Named(name) if name == "reth_jwt:/jwt/reth:ro"));
 }
 
 #[test]
 fn test_local_reth_compose_parsing() {
-    let content = std::fs::read_to_string(get_local_reth_compose()).unwrap();
-    let config = ComposeParser::parse(&content).unwrap();
+    let content = std::fs::read(get_local_reth_compose()).unwrap();
+    let config = ComposeParser::new().parse(&mut content.as_slice()).unwrap();
 
     assert_eq!(config.version, "3.9");
     assert_eq!(config.services.len(), 3);
@@ -167,133 +164,6 @@ fn test_local_reth_compose_parsing() {
     assert!(config.volumes.contains_key("grafanadata"));
 }
 
-with_docker_cleanup!(test_compose_deployment, async |test_id: &str| {
-    if !is_docker_running() {
-        println!("Skipping test: Docker is not running");
-        return;
-    }
-
-    let builder = DockerBuilder::new().await.unwrap();
-    let network_name = format!("test-network-{}", test_id);
-
-    let mut labels = HashMap::new();
-    labels.insert("test_id".to_string(), test_id.to_string());
-
-    // Create network with retry mechanism
-    builder
-        .create_network_with_retry(&network_name, 3, Duration::from_secs(2), Some(labels))
-        .await
-        .unwrap();
-
-    // Create a simple test compose config
-    let mut services = HashMap::new();
-    let mut env = HashMap::new();
-    env.insert("TEST".to_string(), "value".to_string());
-
-    let mut labels = HashMap::new();
-    labels.insert("test_id".to_string(), test_id.to_string());
-
-    let service_name = format!("test-service-{}", test_id);
-    services.insert(
-        service_name,
-        Service {
-            image: Some("alpine:latest".to_string()),
-            ports: Some(vec!["8080:80".to_string()]),
-            environment: Some(env.into()),
-            volumes: None,
-            networks: Some(vec![network_name.clone()]),
-            labels: Some(labels),
-            ..Service::default()
-        },
-    );
-
-    let mut config = ComposeConfig {
-        version: "3".to_string(),
-        services,
-        volumes: HashMap::new(),
-    };
-
-    let container_ids = builder.deploy_compose(&mut config).await.unwrap();
-    assert_eq!(container_ids.len(), 1);
-
-    // Add a small delay to ensure Docker has time to start the container
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    // Verify containers are running
-    for (_, container_id) in container_ids {
-        let mut filters = HashMap::new();
-        filters.insert("id".to_string(), vec![container_id.clone()]);
-        filters.insert("label".to_string(), vec![format!("test_id={}", test_id)]);
-
-        let mut retries = 5;
-        let mut containers_found = false;
-        while retries > 0 {
-            match builder
-                .get_client()
-                .list_containers(Some(ListContainersOptions {
-                    all: true,
-                    filters: filters.clone(),
-                    ..Default::default()
-                }))
-                .await
-            {
-                Ok(containers) => {
-                    if containers.len() == 1 && containers[0].id.as_ref().unwrap() == &container_id
-                    {
-                        containers_found = true;
-                        break;
-                    }
-                }
-                Err(e) => println!("Error listing containers: {:?}", e),
-            }
-            retries -= 1;
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-
-        assert!(containers_found, "Container not found or not running");
-    }
-});
-
-with_docker_cleanup!(test_compose_with_build, async |_: &str| {
-    let builder = DockerBuilder::new().await.unwrap();
-
-    // Create a compose config with build context
-    let mut services = HashMap::new();
-    services.insert(
-        "test-build-service".to_string(),
-        Service {
-            image: None,
-            build: Some(BuildConfig {
-                context: "./".to_string(),
-                dockerfile: Some("Dockerfile".to_string()),
-            }),
-            ports: None,
-            environment: None,
-            volumes: None,
-            networks: None,
-            requirements: None,
-            depends_on: None,
-            healthcheck: None,
-            restart: None,
-            command: None,
-            user: None,
-            labels: None,
-            platform: None,
-            env_file: None,
-        },
-    );
-
-    let mut config = ComposeConfig {
-        version: "3".to_string(),
-        services,
-        volumes: HashMap::new(),
-    };
-
-    let result = builder.deploy_compose(&mut config).await;
-    // This should fail because we don't have a Dockerfile in the current directory
-    assert!(result.is_err());
-});
-
 #[test]
 fn test_volume_validation() {
     let mut config = ComposeConfig {
@@ -304,8 +174,8 @@ fn test_volume_validation() {
 
     let service = Service {
         volumes: Some(vec![
-            VolumeType::Named("test-data:/data".to_string()),
-            VolumeType::Bind {
+            Volume::Named("test-data:/data".to_string()),
+            Volume::Bind {
                 source: PathBuf::from("/host").to_string_lossy().to_string(),
                 target: "/container".to_string(),
                 read_only: false,
@@ -332,7 +202,7 @@ fn test_volume_validation() {
 // Sync tests that don't need Docker cleanup
 #[test]
 fn test_volume_serialization() {
-    let volume = VolumeType::Bind {
+    let volume = Volume::Bind {
         source: PathBuf::from("/host").to_string_lossy().to_string(),
         target: "/container".to_string(),
         read_only: true,
@@ -354,7 +224,7 @@ fn test_service_deployment() {
     let mut config = ComposeConfig::default();
     let service = Service {
         image: Some("nginx:latest".to_string()),
-        volumes: Some(vec![crate::VolumeType::Bind {
+        volumes: Some(vec![crate::Volume::Bind {
             source: PathBuf::from("/host/data").to_string_lossy().to_string(),
             target: "/container/data".to_string(),
             read_only: false,
@@ -367,8 +237,130 @@ fn test_service_deployment() {
 }
 
 #[test]
-fn test_memory_string_parsing() {
-    assert_eq!(parse_memory_string("512M").unwrap(), 512 * 1024 * 1024);
-    assert_eq!(parse_memory_string("1G").unwrap(), 1024 * 1024 * 1024);
-    assert!(parse_memory_string("invalid").is_err());
+fn test_full_compose_parsing() {
+    let compose_content = r#"
+        version: "3.8"
+        services:
+          web:
+            image: nginx:${NGINX_VERSION:-latest}
+            ports:
+              - "${PORT:-80}:80"
+        "#;
+
+    let env_content = "NGINX_VERSION=1.21\nPORT=8080";
+    let temp_file = NamedTempFile::new().unwrap();
+    fs::write(&temp_file, env_content).unwrap();
+
+    let config = ComposeParser::new()
+        .env_file(temp_file.path())
+        .parse(&mut compose_content.as_bytes())
+        .unwrap();
+
+    if let Some(web_service) = config.services.get("web") {
+        assert_eq!(web_service.image.as_deref().unwrap(), "nginx:1.21");
+        assert_eq!(
+            web_service.ports.as_ref().unwrap().first().unwrap(),
+            "8080:80"
+        );
+    } else {
+        panic!("Web service not found in parsed config");
+    }
+}
+
+#[test]
+fn test_environment_variable_formats() {
+    // Test both map and list formats
+    let content = r#"version: "3"
+services:
+    app1:
+        environment:
+            KEY1: value1
+            KEY2: value2
+    app2:
+        environment:
+            - KEY3=value3
+            - KEY4=value4"#;
+
+    let config = ComposeParser::new().parse(&mut content.as_bytes()).unwrap();
+
+    // Check map format
+    let app1 = config.services.get("app1").unwrap();
+    if let Some(env) = &app1.environment {
+        assert_eq!(env.get("KEY1").map(String::as_str), Some("value1"));
+        assert_eq!(env.get("KEY2").map(String::as_str), Some("value2"));
+    } else {
+        panic!("app1 environment should be Some");
+    }
+
+    // Check list format
+    let app2 = config.services.get("app2").unwrap();
+    if let Some(env) = &app2.environment {
+        assert_eq!(env.get("KEY3").map(String::as_str), Some("value3"));
+        assert_eq!(env.get("KEY4").map(String::as_str), Some("value4"));
+    } else {
+        panic!("app2 environment should be Some");
+    }
+}
+
+#[test]
+fn test_environment_variable_edge_cases() {
+    let content = r#"version: "3"
+services:
+    app1:
+        environment:
+            EMPTY: ""
+            QUOTED: "quoted value"
+            SPACES: "  value with spaces  "
+    app2:
+        environment:
+            - EMPTY=
+            - QUOTED="quoted value"
+            - SPACES="  value with spaces  ""#;
+
+    let config = ComposeParser::new().parse(&mut content.as_bytes()).unwrap();
+
+    // Test both formats handle edge cases the same way
+    for service_name in ["app1", "app2"] {
+        let service = config.services.get(service_name).unwrap();
+        if let Some(env) = &service.environment {
+            assert_eq!(env.get("EMPTY").map(String::as_str), Some(""));
+            assert_eq!(env.get("QUOTED").map(String::as_str), Some("quoted value"));
+            assert_eq!(
+                env.get("SPACES").map(String::as_str),
+                Some("  value with spaces  ")
+            );
+        } else {
+            panic!("{} environment should be Some", service_name);
+        }
+    }
+}
+
+#[test]
+fn test_environment_variable_substitution() {
+    let content = r#"version: "3"
+services:
+    app1:
+        image: nginx:${VERSION:-latest}
+        environment:
+            PORT: "${PORT:-8080}"
+            DEBUG: "${DEBUG:-false}""#;
+
+    let mut env_vars = HashMap::new();
+    env_vars.insert("VERSION".to_string(), "1.21".to_string());
+    env_vars.insert("DEBUG".to_string(), "true".to_string());
+
+    let processed = env::substitute_env_vars(content, &env_vars).unwrap();
+    let mut config = ComposeParser::new()
+        .parse(&mut processed.as_bytes())
+        .unwrap();
+    config.resolve_env(&env_vars);
+
+    let app1 = config.services.get("app1").unwrap();
+    assert_eq!(app1.image.as_deref(), Some("nginx:1.21"));
+    if let Some(env) = &app1.environment {
+        assert_eq!(env.get("PORT").map(String::as_str), Some("8080")); // Uses default
+        assert_eq!(env.get("DEBUG").map(String::as_str), Some("true")); // Uses env var
+    } else {
+        panic!("app1 environment should be Some");
+    }
 }
