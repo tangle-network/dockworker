@@ -5,9 +5,19 @@ use bollard::Docker;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::process::Command;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use uuid::Uuid;
+
+#[allow(dead_code)]
+pub fn is_docker_running() -> bool {
+    Command::new("docker")
+        .arg("info")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
 
 pub struct DockerTestContext {
     client: Docker,
@@ -233,7 +243,6 @@ impl Drop for TestGuard {
 }
 
 /// Helper to create a test context and ensure cleanup
-#[cfg(feature = "testing")]
 pub async fn with_docker_cleanup<F>(mut test_body: F) -> color_eyre::Result<()>
 where
     F: FnMut(String) -> Pin<Box<dyn Future<Output = color_eyre::Result<()>> + Send + 'static>>,

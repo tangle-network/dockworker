@@ -1,14 +1,9 @@
-use super::docker_file::is_docker_running;
-use crate::config::Method;
-use crate::tests::utils::with_docker_cleanup;
-use crate::{
-    config::{
-        compose::{ComposeConfig, Service},
-        HealthCheck,
-    },
-    DockerBuilder,
-};
+mod common;
+
 use color_eyre::Result;
+use common::{is_docker_running, with_docker_cleanup};
+use dockworker::config::{HealthCheck, Method};
+use dockworker::{ComposeConfig, DockerBuilder, Service};
 use futures_util::TryStreamExt;
 use std::{collections::HashMap, time::Duration};
 
@@ -104,9 +99,9 @@ async fn test_healthcheck() -> Result<()> {
                         Some(vec![
                             "CMD-SHELL".to_string(),
                             format!(
-                                "curl -X GET {} -s -f -o /dev/null -w '%{{http_code}}' | grep -q {}",
-                                "http://localhost/", "200"
-                            )
+								"curl -X GET {} -s -f -o /dev/null -w '%{{http_code}}' | grep -q {}",
+								"http://localhost/", "200"
+							)
                         ])
                     );
                     assert_eq!(healthcheck.interval, Some(1_000_000_000));
@@ -117,5 +112,6 @@ async fn test_healthcheck() -> Result<()> {
 
             Ok(())
         })
-    }).await
+    })
+    .await
 }

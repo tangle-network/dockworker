@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use super::env;
 use crate::{config::compose::ComposeConfig, error::DockerError};
 use std::collections::HashMap;
@@ -18,6 +21,7 @@ use std::path::{Path, PathBuf};
 /// ```rust,no_run
 /// use dockworker::parser::ComposeParser;
 ///
+/// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // Parse a compose file with environment variables from a .env file
 /// let compose_path = "docker-compose.yml";
@@ -256,141 +260,4 @@ fn validate_required_env_vars(
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-#[allow(clippy::literal_string_with_formatting_args)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::NamedTempFile;
-
-    #[test]
-    fn test_full_compose_parsing() {
-        let compose_content = r#"
-        version: "3.8"
-        services:
-          web:
-            image: nginx:${NGINX_VERSION:-latest}
-            ports:
-              - "${PORT:-80}:80"
-        "#;
-
-        let env_content = "NGINX_VERSION=1.21\nPORT=8080";
-        let temp_file = NamedTempFile::new().unwrap();
-        fs::write(&temp_file, env_content).unwrap();
-
-        let config = ComposeParser::new()
-            .env_file(temp_file.path())
-            .parse(&mut compose_content.as_bytes())
-            .unwrap();
-
-        if let Some(web_service) = config.services.get("web") {
-            assert_eq!(web_service.image.as_deref().unwrap(), "nginx:1.21");
-            assert_eq!(
-                web_service.ports.as_ref().unwrap().first().unwrap(),
-                "8080:80"
-            );
-        } else {
-            panic!("Web service not found in parsed config");
-        }
-    }
-
-    #[test]
-    fn test_environment_variable_formats() {
-        // Test both map and list formats
-        let content = r#"version: "3"
-services:
-    app1:
-        environment:
-            KEY1: value1
-            KEY2: value2
-    app2:
-        environment:
-            - KEY3=value3
-            - KEY4=value4"#;
-
-        let config = ComposeParser::new().parse(&mut content.as_bytes()).unwrap();
-
-        // Check map format
-        let app1 = config.services.get("app1").unwrap();
-        if let Some(env) = &app1.environment {
-            assert_eq!(env.get("KEY1").map(String::as_str), Some("value1"));
-            assert_eq!(env.get("KEY2").map(String::as_str), Some("value2"));
-        } else {
-            panic!("app1 environment should be Some");
-        }
-
-        // Check list format
-        let app2 = config.services.get("app2").unwrap();
-        if let Some(env) = &app2.environment {
-            assert_eq!(env.get("KEY3").map(String::as_str), Some("value3"));
-            assert_eq!(env.get("KEY4").map(String::as_str), Some("value4"));
-        } else {
-            panic!("app2 environment should be Some");
-        }
-    }
-
-    #[test]
-    fn test_environment_variable_edge_cases() {
-        let content = r#"version: "3"
-services:
-    app1:
-        environment:
-            EMPTY: ""
-            QUOTED: "quoted value"
-            SPACES: "  value with spaces  "
-    app2:
-        environment:
-            - EMPTY=
-            - QUOTED="quoted value"
-            - SPACES="  value with spaces  ""#;
-
-        let config = ComposeParser::new().parse(&mut content.as_bytes()).unwrap();
-
-        // Test both formats handle edge cases the same way
-        for service_name in ["app1", "app2"] {
-            let service = config.services.get(service_name).unwrap();
-            if let Some(env) = &service.environment {
-                assert_eq!(env.get("EMPTY").map(String::as_str), Some(""));
-                assert_eq!(env.get("QUOTED").map(String::as_str), Some("quoted value"));
-                assert_eq!(
-                    env.get("SPACES").map(String::as_str),
-                    Some("  value with spaces  ")
-                );
-            } else {
-                panic!("{} environment should be Some", service_name);
-            }
-        }
-    }
-
-    #[test]
-    fn test_environment_variable_substitution() {
-        let content = r#"version: "3"
-services:
-    app1:
-        image: nginx:${VERSION:-latest}
-        environment:
-            PORT: "${PORT:-8080}"
-            DEBUG: "${DEBUG:-false}""#;
-
-        let mut env_vars = HashMap::new();
-        env_vars.insert("VERSION".to_string(), "1.21".to_string());
-        env_vars.insert("DEBUG".to_string(), "true".to_string());
-
-        let processed = env::substitute_env_vars(content, &env_vars).unwrap();
-        let mut config = ComposeParser::new()
-            .parse(&mut processed.as_bytes())
-            .unwrap();
-        config.resolve_env(&env_vars);
-
-        let app1 = config.services.get("app1").unwrap();
-        assert_eq!(app1.image.as_deref(), Some("nginx:1.21"));
-        if let Some(env) = &app1.environment {
-            assert_eq!(env.get("PORT").map(String::as_str), Some("8080")); // Uses default
-            assert_eq!(env.get("DEBUG").map(String::as_str), Some("true")); // Uses env var
-        } else {
-            panic!("app1 environment should be Some");
-        }
-    }
 }

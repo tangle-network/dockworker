@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use crate::config::docker_file::{DockerCommand, DockerfileConfig};
 use crate::error::DockerError;
 use std::collections::HashMap;

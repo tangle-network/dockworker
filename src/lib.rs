@@ -10,8 +10,8 @@ pub mod config;
 pub mod error;
 pub mod parser;
 
-#[doc(hidden)]
-pub mod tests;
+#[cfg(test)]
+mod test_fixtures;
 
 #[cfg(feature = "docker")]
 pub mod builder;

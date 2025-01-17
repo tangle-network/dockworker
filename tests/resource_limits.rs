@@ -1,10 +1,9 @@
-use super::docker_file::is_docker_running;
-use crate::config::compose::{ComposeConfig, Service};
-use crate::config::requirements::parse_memory_string;
-use crate::config::SystemRequirements;
-use crate::tests::utils::with_docker_cleanup;
-use crate::{DockerBuilder, DockerError};
+mod common;
+
 use color_eyre::Result;
+use common::{is_docker_running, with_docker_cleanup};
+use dockworker::config::{parse_memory_string, SystemRequirements};
+use dockworker::{ComposeConfig, DockerBuilder, Service};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -104,21 +103,4 @@ async fn test_resource_limits() -> Result<()> {
         })
     })
     .await
-}
-
-#[tokio::test]
-async fn test_invalid_resource_limits() {
-    let memory_tests = vec![
-        ("1X", "Invalid memory unit: X"),
-        ("abc", "Invalid memory value: abc"),
-        ("12.5G", "Invalid memory value: 12.5G"),
-    ];
-
-    for (input, expected_error) in memory_tests {
-        let result = parse_memory_string(input);
-        assert!(matches!(
-            result,
-            Err(DockerError::InvalidResourceLimit(msg)) if msg.contains(expected_error)
-        ));
-    }
 }
