@@ -4,7 +4,6 @@ use bollard::volume::ListVolumesOptions;
 use bollard::Docker;
 use std::collections::HashMap;
 use std::future::Future;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
@@ -254,8 +253,4 @@ where
     test_body(test_id).await?;
 
     Ok(())
-}
-
-pub(crate) fn fixtures_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures")
 }
