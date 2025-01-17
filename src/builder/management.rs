@@ -135,7 +135,7 @@ impl DockerBuilder {
         let mut pull_stream = self.client.create_image(
             Some(bollard::image::CreateImageOptions {
                 from_image: image,
-                platform: platform.unwrap_or("linux/amd64"),
+                platform: platform.unwrap_or(""),
                 ..Default::default()
             }),
             None,
