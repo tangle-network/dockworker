@@ -6,6 +6,7 @@ pub mod requirements;
 pub mod volume;
 
 pub use compose::*;
+pub use docker_file::*;
 pub use env_vars::*;
 pub use health::*;
 pub use requirements::*;

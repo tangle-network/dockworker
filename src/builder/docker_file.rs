@@ -1,52 +1,13 @@
-use crate::{
-    config::docker_file::DockerfileConfig, error::DockerError,
-    parser::docker_file::DockerfileParser,
-};
+use crate::config::docker_file::DockerfileConfig;
+use crate::error::DockerError;
 use bollard::container::{Config, CreateContainerOptions, StartContainerOptions};
 use bollard::image::BuildImageOptions;
 use bollard::service::HostConfig;
 use futures_util::StreamExt;
-use std::path::Path;
-use tokio::fs;
 
 use super::DockerBuilder;
 
 impl DockerBuilder {
-    /// Creates a new Dockerfile configuration from a file
-    ///
-    /// This method reads a Dockerfile and parses it into a structured configuration.
-    /// It handles basic Dockerfile syntax including:
-    /// - Line continuations with backslash
-    /// - Comments starting with #
-    /// - Basic Dockerfile commands like FROM, COPY, etc.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the Dockerfile
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing the parsed `DockerfileConfig` or a `DockerError`
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use std::path::Path;
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new().await?;
-    /// let config = builder.from_dockerfile(Path::new("Dockerfile")).await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn from_dockerfile<P: AsRef<Path>>(
-        &self,
-        path: P,
-    ) -> Result<DockerfileConfig, DockerError> {
-        let content = fs::read_to_string(path).await?;
-        DockerfileParser::parse(&content)
-    }
-
     /// Deploys a Dockerfile configuration with optional settings
     ///
     /// This method builds a Docker image from a Dockerfile configuration and creates a container from it.
@@ -106,7 +67,7 @@ impl DockerBuilder {
         let dockerfile_path = temp_dir.path().join("Dockerfile");
 
         // Write the Dockerfile content from our config
-        tokio::fs::write(&dockerfile_path, config.to_dockerfile_content()).await?;
+        tokio::fs::write(&dockerfile_path, config.to_string()).await?;
 
         // Create tar archive with the Dockerfile
         let tar_path = temp_dir.path().join("context.tar");

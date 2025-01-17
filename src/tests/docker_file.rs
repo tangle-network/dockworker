@@ -1,6 +1,6 @@
 use crate::config::docker_file::{DockerCommand, DockerfileConfig};
 use crate::tests::utils::with_docker_cleanup;
-use crate::{parser::docker_file::DockerfileParser, DockerBuilder, DockerError};
+use crate::{DockerBuilder, DockerError};
 use bollard::container::ListContainersOptions;
 use color_eyre::Result;
 use futures_util::TryStreamExt;
@@ -20,11 +20,7 @@ pub fn is_docker_running() -> bool {
 
 #[tokio::test]
 async fn test_dockerfile_parsing() {
-    let builder = DockerBuilder::new().await.unwrap();
-    let config = builder
-        .from_dockerfile(get_tangle_dockerfile())
-        .await
-        .unwrap();
+    let config = DockerfileConfig::parse_from_path(get_tangle_dockerfile()).unwrap();
 
     assert_eq!(config.base_image, "ubuntu:22.04");
     assert_eq!(config.commands.len(), 11);
@@ -232,7 +228,7 @@ async fn test_dockerfile_content_generation() {
         ],
     };
 
-    let content = config.to_dockerfile_content();
+    let content = config.to_string();
     let expected = r#"FROM rust:1.70
 RUN cargo build
 COPY ./target /app
@@ -272,7 +268,7 @@ async fn test_all_dockerfile_commands() {
         CMD ["--help"]
     "#;
 
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     assert_eq!(config.base_image, "ubuntu:22.04");
 
     let mut commands_iter = config.commands.iter();
@@ -486,21 +482,21 @@ async fn test_all_dockerfile_commands() {
 #[tokio::test]
 async fn test_invalid_dockerfile_syntax() {
     let content = "COPY";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Invalid command syntax"
     ));
 
     let content = "COPY src";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "COPY requires source and destination"
     ));
 
     let content = "UNKNOWN command";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Unknown command: UNKNOWN"
@@ -510,14 +506,14 @@ async fn test_invalid_dockerfile_syntax() {
 #[tokio::test]
 async fn test_invalid_onbuild() {
     let content = "ONBUILD";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Invalid command syntax"
     ));
 
     let content = "ONBUILD INVALID something";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Unknown command: INVALID"
@@ -525,7 +521,7 @@ async fn test_invalid_onbuild() {
 
     // Test valid ONBUILD commands
     let content = "ONBUILD ADD . /usr/src/app";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     match &config.commands[0] {
         DockerCommand::Onbuild { command } => match command.as_ref() {
             DockerCommand::Add {
@@ -543,7 +539,7 @@ async fn test_invalid_onbuild() {
     }
 
     let content = "ONBUILD RUN mvn install";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     match &config.commands[0] {
         DockerCommand::Onbuild { command } => match command.as_ref() {
             DockerCommand::Run { command } => {
@@ -558,21 +554,21 @@ async fn test_invalid_onbuild() {
 #[tokio::test]
 async fn test_invalid_healthcheck() {
     let content = "HEALTHCHECK --invalid-flag CMD curl localhost";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Invalid HEALTHCHECK flag: --invalid-flag"
     ));
 
     let content = "HEALTHCHECK --interval";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Missing value for --interval flag"
     ));
 
     let content = "HEALTHCHECK --interval 30s";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "HEALTHCHECK must include CMD"
@@ -582,7 +578,7 @@ async fn test_invalid_healthcheck() {
 #[tokio::test]
 async fn test_empty_dockerfile() {
     let content = "";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     assert!(config.base_image.is_empty());
     assert!(config.commands.is_empty());
 }
@@ -599,7 +595,7 @@ async fn test_comments_and_empty_lines() {
         # Final comment
     "#;
 
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     assert_eq!(config.base_image, "ubuntu:22.04");
     assert_eq!(config.commands.len(), 1);
 }
@@ -607,7 +603,7 @@ async fn test_comments_and_empty_lines() {
 #[tokio::test]
 async fn test_expose_multiple_ports() {
     let content = "EXPOSE 30333 9933 9944 9615";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
 
     let expected_ports = [30333, 9933, 9944, 9615];
     assert_eq!(config.commands.len(), expected_ports.len());
@@ -624,7 +620,7 @@ async fn test_expose_multiple_ports() {
 
     // Test mixed format
     let content = "EXPOSE 80/tcp 443 8080/udp 9000";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     assert_eq!(config.commands.len(), 4);
 
     let expected = [
@@ -651,7 +647,7 @@ async fn test_expose_multiple_ports() {
 #[tokio::test]
 async fn test_tangle_expose_format() {
     let content = "EXPOSE 30333 9933 9944 9615";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
 
     let expected_ports = [30333, 9933, 9944, 9615];
     assert_eq!(config.commands.len(), expected_ports.len());
@@ -668,7 +664,7 @@ async fn test_tangle_expose_format() {
 
     // Test error case
     let content = "EXPOSE 30333 invalid 9944";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Invalid port number: invalid"
@@ -747,7 +743,7 @@ async fn test_onbuild_commands() {
     ];
 
     for (content, expected_cmd) in test_cases {
-        let config = DockerfileParser::parse(content).unwrap();
+        let config = DockerfileConfig::parse(content).unwrap();
         match &config.commands[0] {
             DockerCommand::Onbuild { command } => {
                 assert_eq!(command.as_ref(), &expected_cmd);
@@ -761,7 +757,7 @@ async fn test_onbuild_commands() {
 async fn test_volume_formats() {
     // Test space-separated format
     let content = "VOLUME /data /config /cache";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     match &config.commands[0] {
         DockerCommand::Volume { paths } => {
             assert_eq!(paths, &vec!["/data", "/config", "/cache"]);
@@ -771,7 +767,7 @@ async fn test_volume_formats() {
 
     // Test JSON array format
     let content = r#"VOLUME ["/data", "/config"]"#;
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     match &config.commands[0] {
         DockerCommand::Volume { paths } => {
             assert_eq!(paths, &vec!["/data", "/config"]);
@@ -781,7 +777,7 @@ async fn test_volume_formats() {
 
     // Test error case
     let content = "VOLUME [invalid json";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg.contains("Invalid JSON array")
