@@ -3,13 +3,16 @@ use bollard::network::ListNetworksOptions;
 use bollard::volume::ListVolumesOptions;
 use bollard::Docker;
 use std::collections::HashMap;
+use std::future::Future;
+use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use uuid::Uuid;
 
 pub struct DockerTestContext {
-    pub(crate) client: Docker,
-    pub(crate) test_id: String,
+    client: Docker,
+    test_id: String,
 }
 
 impl DockerTestContext {
@@ -230,28 +233,29 @@ impl Drop for TestGuard {
     }
 }
 
-/// Helper macro to create a test context and ensure cleanup
-#[macro_export]
-macro_rules! with_docker_cleanup {
-    ($test_name:ident, $test_body:expr) => {
-        #[tokio::test]
-        async fn $test_name() -> Result<(), Box<dyn std::error::Error>> {
-            let guard = $crate::tests::utils::TestGuard::new();
-            let test_id = guard.get_test_id().to_string();
+/// Helper to create a test context and ensure cleanup
+#[cfg(feature = "testing")]
+pub async fn with_docker_cleanup<F>(mut test_body: F) -> color_eyre::Result<()>
+where
+    F: FnMut(String) -> Pin<Box<dyn Future<Output = color_eyre::Result<()>> + Send + 'static>>,
+{
+    let guard = TestGuard::new();
+    let test_id = guard.get_test_id().to_string();
 
-            // Clean up any leftover resources using the same test_id
-            let client = bollard::Docker::connect_with_local_defaults().unwrap();
-            let ctx = $crate::tests::utils::DockerTestContext {
-                client,
-                test_id: test_id.clone(),
-            };
-            ctx.cleanup().await;
-
-            // Run the test with the guard's test_id
-            let test_fn = $test_body;
-            test_fn(test_id.as_str()).await;
-
-            Ok(())
-        }
+    // Clean up any leftover resources using the same test_id
+    let client = Docker::connect_with_local_defaults()?;
+    let ctx = DockerTestContext {
+        client,
+        test_id: test_id.clone(),
     };
+    ctx.cleanup().await;
+
+    // Run the test with the guard's test_id
+    test_body(test_id).await?;
+
+    Ok(())
+}
+
+pub(crate) fn fixtures_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures")
 }

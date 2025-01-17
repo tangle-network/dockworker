@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::fixtures_path;
+use super::utils::fixtures_path;
 
 pub fn get_tangle_dockerfile() -> PathBuf {
     fixtures_path().join("tangle-dockerfile")

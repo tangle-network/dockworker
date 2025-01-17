@@ -1,8 +1,10 @@
-use crate::{
-    builder::compose::parse_memory_string, parser::ComposeParser,
-    tests::docker_file::is_docker_running, with_docker_cleanup, VolumeType,
-};
+use crate::config::requirements::parse_memory_string;
+use crate::parser::ComposeParser;
+use crate::tests::docker_file::is_docker_running;
+use crate::tests::utils::with_docker_cleanup;
+use crate::VolumeType;
 use bollard::container::ListContainersOptions;
+use color_eyre::Result;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use crate::{BuildConfig, ComposeConfig, DockerBuilder, Service};
@@ -65,8 +67,8 @@ fn test_compose_parsing() {
 
 #[test]
 fn test_reth_archive_compose_parsing() {
-    let content = std::fs::read_to_string(get_reth_archive_compose()).unwrap();
-    let config = ComposeParser::parse(&content).unwrap();
+    let content = std::fs::read(get_reth_archive_compose()).unwrap();
+    let config = ComposeParser::new().parse(&mut content.as_slice()).unwrap();
 
     assert_eq!(config.version, "2");
     assert_eq!(config.services.len(), 2);
@@ -123,8 +125,8 @@ fn test_reth_archive_compose_parsing() {
 
 #[test]
 fn test_local_reth_compose_parsing() {
-    let content = std::fs::read_to_string(get_local_reth_compose()).unwrap();
-    let config = ComposeParser::parse(&content).unwrap();
+    let content = std::fs::read(get_local_reth_compose()).unwrap();
+    let config = ComposeParser::new().parse(&mut content.as_slice()).unwrap();
 
     assert_eq!(config.version, "3.9");
     assert_eq!(config.services.len(), 3);
@@ -167,132 +169,148 @@ fn test_local_reth_compose_parsing() {
     assert!(config.volumes.contains_key("grafanadata"));
 }
 
-with_docker_cleanup!(test_compose_deployment, async |test_id: &str| {
-    if !is_docker_running() {
-        println!("Skipping test: Docker is not running");
-        return;
-    }
-
-    let builder = DockerBuilder::new().await.unwrap();
-    let network_name = format!("test-network-{}", test_id);
-
-    let mut labels = HashMap::new();
-    labels.insert("test_id".to_string(), test_id.to_string());
-
-    // Create network with retry mechanism
-    builder
-        .create_network_with_retry(&network_name, 3, Duration::from_secs(2), Some(labels))
-        .await
-        .unwrap();
-
-    // Create a simple test compose config
-    let mut services = HashMap::new();
-    let mut env = HashMap::new();
-    env.insert("TEST".to_string(), "value".to_string());
-
-    let mut labels = HashMap::new();
-    labels.insert("test_id".to_string(), test_id.to_string());
-
-    let service_name = format!("test-service-{}", test_id);
-    services.insert(
-        service_name,
-        Service {
-            image: Some("alpine:latest".to_string()),
-            ports: Some(vec!["8080:80".to_string()]),
-            environment: Some(env.into()),
-            volumes: None,
-            networks: Some(vec![network_name.clone()]),
-            labels: Some(labels),
-            ..Service::default()
-        },
-    );
-
-    let mut config = ComposeConfig {
-        version: "3".to_string(),
-        services,
-        volumes: HashMap::new(),
-    };
-
-    let container_ids = builder.deploy_compose(&mut config).await.unwrap();
-    assert_eq!(container_ids.len(), 1);
-
-    // Add a small delay to ensure Docker has time to start the container
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    // Verify containers are running
-    for (_, container_id) in container_ids {
-        let mut filters = HashMap::new();
-        filters.insert("id".to_string(), vec![container_id.clone()]);
-        filters.insert("label".to_string(), vec![format!("test_id={}", test_id)]);
-
-        let mut retries = 5;
-        let mut containers_found = false;
-        while retries > 0 {
-            match builder
-                .get_client()
-                .list_containers(Some(ListContainersOptions {
-                    all: true,
-                    filters: filters.clone(),
-                    ..Default::default()
-                }))
-                .await
-            {
-                Ok(containers) => {
-                    if containers.len() == 1 && containers[0].id.as_ref().unwrap() == &container_id
-                    {
-                        containers_found = true;
-                        break;
-                    }
-                }
-                Err(e) => println!("Error listing containers: {:?}", e),
+#[tokio::test]
+async fn test_compose_deployment() -> Result<()> {
+    with_docker_cleanup(|test_id| {
+        Box::pin(async move {
+            if !is_docker_running() {
+                println!("Skipping test: Docker is not running");
+                return Ok(());
             }
-            retries -= 1;
+
+            let builder = DockerBuilder::new().await?;
+            let network_name = format!("test-network-{}", test_id);
+
+            let mut labels = HashMap::new();
+            labels.insert("test_id".to_string(), test_id.to_string());
+
+            // Create network with retry mechanism
+            builder
+                .create_network_with_retry(&network_name, 3, Duration::from_secs(2), Some(labels))
+                .await?;
+
+            // Create a simple test compose config
+            let mut services = HashMap::new();
+            let mut env = HashMap::new();
+            env.insert("TEST".to_string(), "value".to_string());
+
+            let mut labels = HashMap::new();
+            labels.insert("test_id".to_string(), test_id.to_string());
+
+            let service_name = format!("test-service-{}", test_id);
+            services.insert(
+                service_name,
+                Service {
+                    image: Some("alpine:latest".to_string()),
+                    ports: Some(vec!["8080:80".to_string()]),
+                    environment: Some(env.into()),
+                    volumes: None,
+                    networks: Some(vec![network_name.clone()]),
+                    labels: Some(labels),
+                    ..Service::default()
+                },
+            );
+
+            let mut config = ComposeConfig {
+                version: "3".to_string(),
+                services,
+                volumes: HashMap::new(),
+            };
+
+            let container_ids = builder.deploy_compose(&mut config).await?;
+            assert_eq!(container_ids.len(), 1);
+
+            // Add a small delay to ensure Docker has time to start the container
             tokio::time::sleep(Duration::from_millis(100)).await;
-        }
 
-        assert!(containers_found, "Container not found or not running");
-    }
-});
+            // Verify containers are running
+            for (_, container_id) in container_ids {
+                let mut filters = HashMap::new();
+                filters.insert("id".to_string(), vec![container_id.clone()]);
+                filters.insert("label".to_string(), vec![format!("test_id={}", test_id)]);
 
-with_docker_cleanup!(test_compose_with_build, async |_: &str| {
-    let builder = DockerBuilder::new().await.unwrap();
+                let mut retries = 5;
+                let mut containers_found = false;
+                while retries > 0 {
+                    match builder
+                        .get_client()
+                        .list_containers(Some(ListContainersOptions {
+                            all: true,
+                            filters: filters.clone(),
+                            ..Default::default()
+                        }))
+                        .await
+                    {
+                        Ok(containers) => {
+                            if containers.len() == 1
+                                && containers[0].id.as_ref().unwrap() == &container_id
+                            {
+                                containers_found = true;
+                                break;
+                            }
+                        }
+                        Err(e) => println!("Error listing containers: {:?}", e),
+                    }
+                    retries -= 1;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
 
-    // Create a compose config with build context
-    let mut services = HashMap::new();
-    services.insert(
-        "test-build-service".to_string(),
-        Service {
-            image: None,
-            build: Some(BuildConfig {
-                context: "./".to_string(),
-                dockerfile: Some("Dockerfile".to_string()),
-            }),
-            ports: None,
-            environment: None,
-            volumes: None,
-            networks: None,
-            requirements: None,
-            depends_on: None,
-            healthcheck: None,
-            restart: None,
-            command: None,
-            user: None,
-            labels: None,
-            platform: None,
-            env_file: None,
-        },
-    );
+                assert!(containers_found, "Container not found or not running");
+            }
 
-    let mut config = ComposeConfig {
-        version: "3".to_string(),
-        services,
-        volumes: HashMap::new(),
-    };
+            Ok(())
+        })
+    })
+    .await
+}
 
-    let result = builder.deploy_compose(&mut config).await;
-    // This should fail because we don't have a Dockerfile in the current directory
-    assert!(result.is_err());
-});
+#[tokio::test]
+async fn test_compose_with_build() -> Result<()> {
+    with_docker_cleanup(|_test_id| {
+        Box::pin(async move {
+            let builder = DockerBuilder::new().await.unwrap();
+
+            // Create a compose config with build context
+            let mut services = HashMap::new();
+            services.insert(
+                "test-build-service".to_string(),
+                Service {
+                    image: None,
+                    build: Some(BuildConfig {
+                        context: "./".to_string(),
+                        dockerfile: Some("Dockerfile".to_string()),
+                    }),
+                    ports: None,
+                    environment: None,
+                    volumes: None,
+                    networks: None,
+                    requirements: None,
+                    depends_on: None,
+                    healthcheck: None,
+                    restart: None,
+                    command: None,
+                    user: None,
+                    labels: None,
+                    platform: None,
+                    env_file: None,
+                },
+            );
+
+            let mut config = ComposeConfig {
+                version: "3".to_string(),
+                services,
+                volumes: HashMap::new(),
+            };
+
+            let result = builder.deploy_compose(&mut config).await;
+            // This should fail because we don't have a Dockerfile in the current directory
+            assert!(result.is_err());
+
+            Ok(())
+        })
+    })
+    .await
+}
 
 #[test]
 fn test_volume_validation() {

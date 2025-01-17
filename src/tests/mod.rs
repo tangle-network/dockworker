@@ -1,17 +1,16 @@
-// Parser tests always available
-pub mod compose;
-pub mod docker_file;
-pub mod fixtures;
-pub mod utils;
+cfg_if::cfg_if! {
+    // Parser tests always available
+    if #[cfg(test)] {
+        pub mod compose;
+        pub mod docker_file;
+        pub mod fixtures;
 
-// Deployment tests only with deploy feature
-mod compose_health;
-mod compose_requirements;
-mod integration;
-mod management;
-
-use std::path::PathBuf;
-
-pub(crate) fn fixtures_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures")
+        // Deployment tests only with deploy feature
+        mod compose_health;
+        mod compose_requirements;
+        mod management;
+    }
 }
+
+// Utils are always available for integration tests
+pub mod utils;

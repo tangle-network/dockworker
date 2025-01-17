@@ -10,7 +10,7 @@ pub mod config;
 pub mod error;
 pub mod parser;
 
-#[cfg(test)]
+#[doc(hidden)]
 pub mod tests;
 
 #[cfg(feature = "docker")]
