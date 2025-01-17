@@ -53,6 +53,7 @@ impl ComposeParser {
     ///
     /// ```rust,no_run
     /// use dockworker::parser::ComposeParser;
+    ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = ComposeParser::new().parse_from_path("docker-compose.yml")?;
     /// # Ok(())

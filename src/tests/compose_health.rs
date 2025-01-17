@@ -1,4 +1,5 @@
 use super::docker_file::is_docker_running;
+use crate::config::Method;
 use crate::tests::utils::with_docker_cleanup;
 use crate::{
     config::{
@@ -64,7 +65,7 @@ async fn test_healthcheck() -> Result<()> {
                     image: Some("nginx:latest".to_string()),
                     healthcheck: Some(HealthCheck {
                         endpoint: "http://localhost/".to_string(),
-                        method: "GET".to_string(),
+                        method: Method::Get,
                         expected_status: 200,
                         body: None,
                         interval: Duration::from_secs(1),
