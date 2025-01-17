@@ -3,6 +3,7 @@ use super::EnvironmentVars;
 use crate::config::health::HealthCheck;
 use crate::config::requirements::SystemRequirements;
 use crate::error::DockerError;
+use crate::parser::env;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -325,8 +326,7 @@ impl ComposeConfig {
                     println!("Loading common env file: {}", entry.path().display());
                     match std::fs::read_to_string(entry.path()) {
                         Ok(content) => {
-                            let file_vars =
-                                crate::parser::compose::ComposeParser::parse_env_file(&content)?;
+                            let file_vars = env::parse_env_file(&content)?;
                             for (key, value) in file_vars {
                                 env_vars.entry(key).or_insert(value);
                             }
@@ -362,8 +362,7 @@ impl ComposeConfig {
                     // Read and parse env file if it exists
                     match std::fs::read_to_string(&env_path) {
                         Ok(content) => {
-                            let file_vars =
-                                crate::parser::compose::ComposeParser::parse_env_file(&content)?;
+                            let file_vars = env::parse_env_file(&content)?;
                             env_vars.extend(file_vars);
                         }
                         Err(e) => {

@@ -34,7 +34,7 @@ impl DockerBuilder {
     /// # use std::path::Path;
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     /// let config = builder.from_dockerfile(Path::new("Dockerfile")).await?;
     /// # Ok(())
     /// # }
@@ -73,7 +73,7 @@ impl DockerBuilder {
     /// ```rust,no_run
     /// # use dockworker::{DockerBuilder, config::docker_file::{DockerCommand, DockerfileConfig}};
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     /// let config = DockerfileConfig { // Your Dockerfile config
     ///     base_image: "ubuntu:latest".to_string(),
     ///     commands: vec![

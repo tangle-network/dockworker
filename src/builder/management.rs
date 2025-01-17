@@ -88,7 +88,7 @@ impl DockerBuilder {
     /// ```rust,no_run
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     /// builder.remove_network("my-network").await?;
     /// # Ok(())
     /// # }
@@ -119,7 +119,7 @@ impl DockerBuilder {
     /// ```rust,no_run
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     ///
     /// // Pull with default platform
     /// builder.pull_image("ubuntu:latest", None).await?;
@@ -165,7 +165,7 @@ impl DockerBuilder {
     /// ```rust,no_run
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     /// let networks = builder.list_networks().await?;
     /// for network in networks {
     ///     println!("Found network: {}", network);
@@ -200,7 +200,7 @@ impl DockerBuilder {
     /// ```rust,no_run
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     /// builder.create_volume("my_volume").await?;
     /// # Ok(())
     /// # }
@@ -235,7 +235,7 @@ impl DockerBuilder {
     /// ```rust,no_run
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     /// builder.remove_volume("my_volume").await?;
     /// # Ok(())
     /// # }
@@ -261,7 +261,7 @@ impl DockerBuilder {
     /// ```rust,no_run
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     /// let volumes = builder.list_volumes().await?;
     /// for volume in volumes {
     ///     println!("Found volume: {}", volume);
@@ -303,7 +303,7 @@ impl DockerBuilder {
     /// ```rust,no_run
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     /// builder.wait_for_container("container_id").await?;
     /// # Ok(())
     /// # }
@@ -352,7 +352,7 @@ impl DockerBuilder {
     /// ```rust,no_run
     /// # use dockworker::DockerBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     /// let logs = builder.get_container_logs("container_id").await?;
     /// println!("Container logs: {}", logs);
     /// # Ok(())

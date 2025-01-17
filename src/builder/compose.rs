@@ -5,7 +5,6 @@ use crate::{
         volume::VolumeType,
     },
     error::DockerError,
-    parser::compose::ComposeParser,
     DockerBuilder,
 };
 use bollard::container::{Config, CreateContainerOptions, StartContainerOptions};
@@ -16,116 +15,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tar;
 use tempfile;
-use tokio::fs;
 use uuid::Uuid;
 use walkdir;
 
 impl DockerBuilder {
-    /// Creates a new Docker Compose configuration from a file with environment variables
-    ///
-    /// This method reads both the compose file and an environment file, then
-    /// performs variable substitution before parsing.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the Docker Compose file
-    /// * `env_path` - Path to the environment file
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing the parsed `ComposeConfig` or a `DockerError`
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use std::path::Path;
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
-    /// let config = builder
-    ///     .from_compose_with_env(Path::new("docker-compose.yml"), Path::new(".env"))
-    ///     .await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn from_compose_with_env<P: AsRef<Path>>(
-        &self,
-        path: P,
-        env_path: P,
-    ) -> Result<ComposeConfig, DockerError> {
-        ComposeParser::from_file_with_env(path, env_path).await
-    }
-
-    /// Creates a new Docker Compose configuration from a file with environment variables provided as a HashMap
-    ///
-    /// This method is useful when you want to provide environment variables programmatically rather than from a file.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the Docker Compose file
-    /// * `env_vars` - HashMap containing environment variable key-value pairs
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing the parsed `ComposeConfig` or a `DockerError`
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use std::path::Path;
-    /// # use std::collections::HashMap;
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
-    /// let mut env_vars = HashMap::new();
-    /// env_vars.insert("VERSION".to_string(), "1.0".to_string());
-    /// let config = builder
-    ///     .from_compose_with_env_map(Path::new("docker-compose.yml"), &env_vars)
-    ///     .await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn from_compose_with_env_map<P: AsRef<Path>>(
-        &self,
-        path: P,
-        env_vars: &HashMap<String, String>,
-    ) -> Result<ComposeConfig, DockerError> {
-        ComposeParser::from_file_with_env_map(path, env_vars).await
-    }
-
-    /// Creates a new Docker Compose configuration from a file
-    ///
-    /// This is a simple wrapper around `ComposeParser::parse()` that reads the file contents first.
-    ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to the Docker Compose file
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing the parsed `ComposeConfig` or a `DockerError`
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # use std::path::Path;
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
-    /// let config = builder
-    ///     .from_compose(Path::new("docker-compose.yml"))
-    ///     .await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    pub async fn from_compose<P: AsRef<Path>>(
-        &self,
-        path: P,
-    ) -> Result<ComposeConfig, DockerError> {
-        let content = fs::read_to_string(path).await?;
-        ComposeParser::parse(&content)
-    }
-
     /// Deploys a Docker Compose configuration with a custom base directory
     ///
     /// This method deploys services defined in a Docker Compose configuration, using the specified
@@ -152,11 +45,11 @@ impl DockerBuilder {
     /// # use dockworker::DockerBuilder;
     /// # use dockworker::parser::ComposeParser;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
-    /// let mut config = ComposeParser::from_file(Path::new("docker-compose.yml")).await?;
-    /// let container_ids = builder
-    ///     .deploy_compose_with_base_dir(&mut config, std::env::current_dir()?)
-    ///     .await?;
+    /// let compose_path = "docker-compose.yml";
+    ///
+    /// let builder = DockerBuilder::new().await?;
+    /// let mut config = ComposeParser::new().parse_from_path(compose_path)?;
+    /// let container_ids = builder.deploy_compose(&mut config).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -200,7 +93,7 @@ impl DockerBuilder {
     /// # use dockworker::DockerBuilder;
     /// # use dockworker::parser::ComposeParser;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// let builder = DockerBuilder::new().await?;
     /// let mut config = ComposeParser::parse(
     ///     r#"
     ///   version: "3"
@@ -631,24 +524,5 @@ impl DockerBuilder {
             // Join with base path and normalize
             Ok(base.join(normalized))
         }
-    }
-}
-
-// Helper function to parse memory strings like "1G", "512M" into bytes
-pub fn parse_memory_string(memory: &str) -> Result<i64, DockerError> {
-    let len = memory.len();
-    let (num, unit) = memory.split_at(len - 1);
-    let base = num.parse::<i64>().map_err(|_| {
-        DockerError::InvalidResourceLimit(format!("Invalid memory value: {}", memory))
-    })?;
-
-    match unit.to_uppercase().as_str() {
-        "K" => Ok(base * 1024),
-        "M" => Ok(base * 1024 * 1024),
-        "G" => Ok(base * 1024 * 1024 * 1024),
-        _ => Err(DockerError::InvalidResourceLimit(format!(
-            "Invalid memory unit: {}",
-            unit
-        ))),
     }
 }
