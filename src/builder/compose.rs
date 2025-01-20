@@ -50,8 +50,7 @@ impl DockerBuilder {
     /// let builder = DockerBuilder::new().await?;
     /// let mut config = ComposeParser::new().parse_from_path(compose_path)?;
     /// let container_ids = builder.deploy_compose(&mut config).await?;
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     ///
     /// # Errors
@@ -90,21 +89,22 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use dockworker::DockerBuilder;
-    /// # use dockworker::parser::ComposeParser;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new().await?;
-    /// let mut config = ComposeParser::parse(
-    ///     r#"
+    /// use dockworker::parser::ComposeParser;
+    /// use dockworker::DockerBuilder;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::DockerError> {
+    /// let compose_file = r#"
     ///   version: "3"
     ///   services:
     ///     web:
     ///       image: nginx
-    /// "#,
-    /// )?;
+    /// "#;
+    ///
+    /// let builder = DockerBuilder::new().await?;
+    /// let mut config = ComposeParser::new().parse(&mut compose_file.as_bytes())?;
     /// let container_ids = builder.deploy_compose(&mut config).await?;
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     ///
     /// # Errors
