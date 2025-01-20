@@ -1,8 +1,5 @@
 //! Utilities for spinning up and managing Docker containers
-//!
-//! This module provides wrappers around [`bollard`] to simplify Docker interactions within blueprints.
 
-pub use bollard;
 use bollard::container::{
     Config, CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
     StartContainerOptions, StopContainerOptions, WaitContainerOptions,

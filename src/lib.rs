@@ -19,3 +19,5 @@ pub mod builder;
 pub use builder::DockerBuilder;
 #[cfg(feature = "docker")]
 pub mod container;
+#[cfg(feature = "docker")]
+pub use bollard;

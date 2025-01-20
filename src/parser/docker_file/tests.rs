@@ -233,8 +233,7 @@ async fn test_all_dockerfile_commands() {
 
     // Test RUN
     if let Some(DockerCommand::Run { command }) = commands_iter.next() {
-        assert!(command.contains("apt-get update"));
-        assert!(command.contains("apt-get install -y python3"));
+        assert_eq!(command, "apt-get update &&  apt-get install -y python3");
     } else {
         panic!("Expected RUN command");
     }
