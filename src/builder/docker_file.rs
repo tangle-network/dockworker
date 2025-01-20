@@ -32,26 +32,36 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use dockworker::{DockerBuilder, config::docker_file::{DockerCommand, DockerfileConfig}};
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// use dockworker::config::docker_file::{DockerCommand, DockerfileConfig};
+    /// use dockworker::DockerBuilder;
+    ///
+    /// # async fn example() -> Result<(), dockworker::DockerError> {
     /// let builder = DockerBuilder::new().await?;
-    /// let config = DockerfileConfig { // Your Dockerfile config
+    /// let config = DockerfileConfig {
+    ///     // Your Dockerfile config
     ///     base_image: "ubuntu:latest".to_string(),
     ///     commands: vec![
-    ///         DockerCommand::Run { command: "apt-get update".to_string() },
-    ///         DockerCommand::Copy { source: "app".to_string(), dest: "/app".to_string(), chown: None },
-    ///     ]
+    ///         DockerCommand::Run {
+    ///             command: "apt-get update".to_string(),
+    ///         },
+    ///         DockerCommand::Copy {
+    ///             source: "app".to_string(),
+    ///             dest: "/app".to_string(),
+    ///             chown: None,
+    ///         },
+    ///     ],
     /// };
-    /// let container_id = builder.deploy_dockerfile(
-    ///     &config,
-    ///     "my-image:latest",
-    ///     Some(vec!["echo".to_string(), "hello".to_string()]),
-    ///     None,
-    ///     None,
-    ///     None
-    /// ).await?;
-    /// # Ok(())
-    /// # }
+    /// let container_id = builder
+    ///     .deploy_dockerfile(
+    ///         &config,
+    ///         "my-image:latest",
+    ///         Some(vec!["echo".to_string(), "hello".to_string()]),
+    ///         None,
+    ///         None,
+    ///         None,
+    ///     )
+    ///     .await?;
+    /// # Ok(()) }
     /// ```
     pub async fn deploy_dockerfile(
         &self,

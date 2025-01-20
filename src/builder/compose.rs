@@ -447,8 +447,9 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust
-    /// # use dockworker::{DockerBuilder, config::compose::Service};
-    /// # use std::collections::HashMap;
+    /// use dockworker::{config::compose::Service, DockerBuilder};
+    /// use std::collections::HashMap;
+    ///
     /// # fn example() {
     /// let mut service = Service::default();
     /// let mut env = HashMap::new();
