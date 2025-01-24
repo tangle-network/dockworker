@@ -183,7 +183,7 @@ impl OptimismTestContext {
         })?;
 
         // Copy optimism_env.env to .env
-        let env_src = PathBuf::from("optimism_env.env");
+        let env_src = PathBuf::from("tests/optimism_env.env");
         let env_dst = self.test_dir.join(".env");
         println!("Copying env file:");
         println!("  From: {}", env_src.display());
