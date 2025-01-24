@@ -102,7 +102,7 @@ impl HealthCheck {
             .timeout(self.timeout)
             .send()
             .await
-            .map_err(|e| HealthCheckError::Request(e))?;
+            .map_err(HealthCheckError::Request)?;
 
         let status = response.status().as_u16();
         if status != self.expected_status {
