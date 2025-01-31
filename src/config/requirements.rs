@@ -125,3 +125,33 @@ pub fn parse_memory_string(memory: &str) -> Result<i64, DockerError> {
         ))),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_memory_string;
+    use crate::error::DockerError;
+
+    #[test]
+    fn test_memory_string_parsing() {
+        assert_eq!(parse_memory_string("512M").unwrap(), 512 * 1024 * 1024);
+        assert_eq!(parse_memory_string("1G").unwrap(), 1024 * 1024 * 1024);
+        assert!(parse_memory_string("invalid").is_err());
+    }
+
+    #[test]
+    fn test_invalid_resource_limits() {
+        let memory_tests = vec![
+            ("1X", "Invalid memory unit: X"),
+            ("abc", "Invalid memory value: abc"),
+            ("12.5G", "Invalid memory value: 12.5G"),
+        ];
+
+        for (input, expected_error) in memory_tests {
+            let result = parse_memory_string(input);
+            assert!(matches!(
+                result,
+                Err(DockerError::InvalidResourceLimit(msg)) if msg.contains(expected_error)
+            ));
+        }
+    }
+}

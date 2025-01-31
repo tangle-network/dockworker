@@ -1,30 +1,11 @@
 use crate::config::docker_file::{DockerCommand, DockerfileConfig};
-use crate::{
-    parser::docker_file::DockerfileParser, with_docker_cleanup, DockerBuilder, DockerError,
-};
-use bollard::container::ListContainersOptions;
-use futures_util::TryStreamExt;
+use crate::test_fixtures::get_tangle_dockerfile;
+use crate::DockerError;
 use std::collections::HashMap;
-use std::process::Command;
-use std::time::Duration;
-
-use super::fixtures::get_tangle_dockerfile;
-
-pub fn is_docker_running() -> bool {
-    Command::new("docker")
-        .arg("info")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
-}
 
 #[tokio::test]
 async fn test_dockerfile_parsing() {
-    let builder = DockerBuilder::new().await.unwrap();
-    let config = builder
-        .from_dockerfile(get_tangle_dockerfile())
-        .await
-        .unwrap();
+    let config = DockerfileConfig::parse_from_path(get_tangle_dockerfile()).unwrap();
 
     assert_eq!(config.base_image, "ubuntu:22.04");
     assert_eq!(config.commands.len(), 11);
@@ -77,129 +58,6 @@ async fn test_dockerfile_parsing() {
     }
 }
 
-with_docker_cleanup!(test_dockerfile_deployment, async |test_id: &str| {
-    if !is_docker_running() {
-        println!("Skipping test: Docker is not running");
-        return;
-    }
-
-    let builder = DockerBuilder::new().await.unwrap();
-    let network_name = format!("test-network-{}", test_id);
-
-    let mut network_labels = HashMap::new();
-    network_labels.insert("test_id".to_string(), test_id.to_string());
-
-    // Create network with retry mechanism
-    builder
-        .create_network_with_retry(
-            &network_name,
-            3,
-            Duration::from_secs(2),
-            Some(network_labels),
-        )
-        .await
-        .unwrap();
-
-    // Pull alpine image first
-    println!("Pulling alpine image...");
-    builder
-        .get_client()
-        .create_image(
-            Some(bollard::image::CreateImageOptions {
-                from_image: "alpine",
-                tag: "latest",
-                ..Default::default()
-            }),
-            None,
-            None,
-        )
-        .try_collect::<Vec<_>>()
-        .await
-        .unwrap();
-    println!("Image pull complete");
-
-    // Create a simple test Dockerfile config
-    let config = DockerfileConfig {
-        base_image: "alpine:latest".to_string(),
-        commands: vec![
-            DockerCommand::Run {
-                command: "echo 'test' > /test.txt".to_string(),
-            },
-            DockerCommand::Label {
-                labels: {
-                    let mut labels = HashMap::new();
-                    labels.insert("test_id".to_string(), test_id.to_string());
-                    labels
-                },
-            },
-            DockerCommand::Cmd {
-                command: vec!["sleep".to_string(), "30".to_string()], // Keep container running
-            },
-        ],
-    };
-
-    let tag = format!("test-dockerfile-{}", test_id);
-    println!("Building image with tag: {}", tag);
-
-    // Deploy using our config with network
-    let container_id = builder
-        .deploy_dockerfile(&config, &tag, None, None, Some(network_name.clone()), None)
-        .await
-        .unwrap();
-    println!("Container created with ID: {}", container_id);
-
-    // Add a small delay after creation
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    // Verify container is running
-    let mut filters = std::collections::HashMap::new();
-    filters.insert("id".to_string(), vec![container_id.clone()]);
-    filters.insert("label".to_string(), vec![format!("test_id={}", test_id)]);
-
-    let mut retries = 5;
-    let mut container_running = false;
-    while retries > 0 {
-        println!("Checking container state, attempt {}", 6 - retries);
-        if let Ok(containers) = builder
-            .get_client()
-            .list_containers(Some(ListContainersOptions {
-                all: true,
-                filters: filters.clone(),
-                ..Default::default()
-            }))
-            .await
-        {
-            if !containers.is_empty() {
-                println!("Container found and running");
-                container_running = true;
-                break;
-            } else {
-                println!("No containers found matching filters");
-            }
-        } else {
-            println!("Error listing containers");
-        }
-        retries -= 1;
-        tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-
-    // If container not running, get more details
-    if !container_running {
-        println!("Container not found with filters. Checking container inspect...");
-        if let Ok(inspect) = builder
-            .get_client()
-            .inspect_container(&container_id, None)
-            .await
-        {
-            println!("Container inspect result: {:?}", inspect);
-        } else {
-            println!("Failed to inspect container");
-        }
-    }
-
-    assert!(container_running, "Container should be running");
-});
-
 #[tokio::test]
 async fn test_dockerfile_content_generation() {
     let config = DockerfileConfig {
@@ -227,7 +85,7 @@ async fn test_dockerfile_content_generation() {
         ],
     };
 
-    let content = config.to_dockerfile_content();
+    let content = config.to_string();
     let expected = r#"FROM rust:1.70
 RUN cargo build
 COPY ./target /app
@@ -267,7 +125,7 @@ async fn test_all_dockerfile_commands() {
         CMD ["--help"]
     "#;
 
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     assert_eq!(config.base_image, "ubuntu:22.04");
 
     let mut commands_iter = config.commands.iter();
@@ -375,8 +233,7 @@ async fn test_all_dockerfile_commands() {
 
     // Test RUN
     if let Some(DockerCommand::Run { command }) = commands_iter.next() {
-        assert!(command.contains("apt-get update"));
-        assert!(command.contains("apt-get install -y python3"));
+        assert_eq!(command, "apt-get update &&  apt-get install -y python3");
     } else {
         panic!("Expected RUN command");
     }
@@ -481,21 +338,21 @@ async fn test_all_dockerfile_commands() {
 #[tokio::test]
 async fn test_invalid_dockerfile_syntax() {
     let content = "COPY";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Invalid command syntax"
     ));
 
     let content = "COPY src";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "COPY requires source and destination"
     ));
 
     let content = "UNKNOWN command";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Unknown command: UNKNOWN"
@@ -505,14 +362,14 @@ async fn test_invalid_dockerfile_syntax() {
 #[tokio::test]
 async fn test_invalid_onbuild() {
     let content = "ONBUILD";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Invalid command syntax"
     ));
 
     let content = "ONBUILD INVALID something";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Unknown command: INVALID"
@@ -520,7 +377,7 @@ async fn test_invalid_onbuild() {
 
     // Test valid ONBUILD commands
     let content = "ONBUILD ADD . /usr/src/app";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     match &config.commands[0] {
         DockerCommand::Onbuild { command } => match command.as_ref() {
             DockerCommand::Add {
@@ -538,7 +395,7 @@ async fn test_invalid_onbuild() {
     }
 
     let content = "ONBUILD RUN mvn install";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     match &config.commands[0] {
         DockerCommand::Onbuild { command } => match command.as_ref() {
             DockerCommand::Run { command } => {
@@ -553,21 +410,21 @@ async fn test_invalid_onbuild() {
 #[tokio::test]
 async fn test_invalid_healthcheck() {
     let content = "HEALTHCHECK --invalid-flag CMD curl localhost";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Invalid HEALTHCHECK flag: --invalid-flag"
     ));
 
     let content = "HEALTHCHECK --interval";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Missing value for --interval flag"
     ));
 
     let content = "HEALTHCHECK --interval 30s";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "HEALTHCHECK must include CMD"
@@ -577,7 +434,7 @@ async fn test_invalid_healthcheck() {
 #[tokio::test]
 async fn test_empty_dockerfile() {
     let content = "";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     assert!(config.base_image.is_empty());
     assert!(config.commands.is_empty());
 }
@@ -587,14 +444,14 @@ async fn test_comments_and_empty_lines() {
     let content = r#"
         # This is a comment
         FROM ubuntu:22.04
-        
+
         # Another comment
         RUN echo "test"
-        
+
         # Final comment
     "#;
 
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     assert_eq!(config.base_image, "ubuntu:22.04");
     assert_eq!(config.commands.len(), 1);
 }
@@ -602,7 +459,7 @@ async fn test_comments_and_empty_lines() {
 #[tokio::test]
 async fn test_expose_multiple_ports() {
     let content = "EXPOSE 30333 9933 9944 9615";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
 
     let expected_ports = [30333, 9933, 9944, 9615];
     assert_eq!(config.commands.len(), expected_ports.len());
@@ -619,7 +476,7 @@ async fn test_expose_multiple_ports() {
 
     // Test mixed format
     let content = "EXPOSE 80/tcp 443 8080/udp 9000";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     assert_eq!(config.commands.len(), 4);
 
     let expected = [
@@ -646,7 +503,7 @@ async fn test_expose_multiple_ports() {
 #[tokio::test]
 async fn test_tangle_expose_format() {
     let content = "EXPOSE 30333 9933 9944 9615";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
 
     let expected_ports = [30333, 9933, 9944, 9615];
     assert_eq!(config.commands.len(), expected_ports.len());
@@ -663,7 +520,7 @@ async fn test_tangle_expose_format() {
 
     // Test error case
     let content = "EXPOSE 30333 invalid 9944";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg == "Invalid port number: invalid"
@@ -742,7 +599,7 @@ async fn test_onbuild_commands() {
     ];
 
     for (content, expected_cmd) in test_cases {
-        let config = DockerfileParser::parse(content).unwrap();
+        let config = DockerfileConfig::parse(content).unwrap();
         match &config.commands[0] {
             DockerCommand::Onbuild { command } => {
                 assert_eq!(command.as_ref(), &expected_cmd);
@@ -756,7 +613,7 @@ async fn test_onbuild_commands() {
 async fn test_volume_formats() {
     // Test space-separated format
     let content = "VOLUME /data /config /cache";
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     match &config.commands[0] {
         DockerCommand::Volume { paths } => {
             assert_eq!(paths, &vec!["/data", "/config", "/cache"]);
@@ -766,7 +623,7 @@ async fn test_volume_formats() {
 
     // Test JSON array format
     let content = r#"VOLUME ["/data", "/config"]"#;
-    let config = DockerfileParser::parse(content).unwrap();
+    let config = DockerfileConfig::parse(content).unwrap();
     match &config.commands[0] {
         DockerCommand::Volume { paths } => {
             assert_eq!(paths, &vec!["/data", "/config"]);
@@ -776,7 +633,7 @@ async fn test_volume_formats() {
 
     // Test error case
     let content = "VOLUME [invalid json";
-    let result = DockerfileParser::parse(content);
+    let result = DockerfileConfig::parse(content);
     assert!(matches!(
         result,
         Err(DockerError::DockerfileError(msg)) if msg.contains("Invalid JSON array")

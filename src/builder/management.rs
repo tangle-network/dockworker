@@ -19,10 +19,11 @@ impl DockerBuilder {
     ///
     /// # Examples
     /// ```no_run
-    /// # use std::time::Duration;
-    /// # use std::collections::HashMap;
-    /// # use dockworker::{DockerBuilder, DockerError};
-    /// # async fn example(builder: DockerBuilder) -> Result<(), DockerError> {
+    /// use dockworker::DockerBuilder;
+    /// use std::collections::HashMap;
+    /// use std::time::Duration;
+    ///
+    /// # async fn example(builder: DockerBuilder) -> Result<(), dockworker::DockerError> {
     /// // Create a network with retries
     /// let mut labels = HashMap::new();
     /// labels.insert("env".to_string(), "prod".to_string());
@@ -30,8 +31,7 @@ impl DockerBuilder {
     /// builder
     ///     .create_network_with_retry("my-network", 3, Duration::from_secs(1), Some(labels))
     ///     .await?;
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     pub async fn create_network_with_retry(
         &self,
@@ -86,12 +86,12 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// use dockworker::DockerBuilder;
+    ///
+    /// # async fn example() -> Result<(), dockworker::DockerError> {
+    /// let builder = DockerBuilder::new().await?;
     /// builder.remove_network("my-network").await?;
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     pub async fn remove_network(&self, name: &str) -> Result<(), DockerError> {
         self.get_client()
@@ -117,9 +117,10 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// use dockworker::DockerBuilder;
+    ///
+    /// # async fn example() -> Result<(), dockworker::DockerError> {
+    /// let builder = DockerBuilder::new().await?;
     ///
     /// // Pull with default platform
     /// builder.pull_image("ubuntu:latest", None).await?;
@@ -128,14 +129,13 @@ impl DockerBuilder {
     /// builder
     ///     .pull_image("ubuntu:latest", Some("linux/arm64"))
     ///     .await?;
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     pub async fn pull_image(&self, image: &str, platform: Option<&str>) -> Result<(), DockerError> {
         let mut pull_stream = self.client.create_image(
             Some(bollard::image::CreateImageOptions {
                 from_image: image,
-                platform: platform.unwrap_or("linux/amd64"),
+                platform: platform.unwrap_or(""),
                 ..Default::default()
             }),
             None,
@@ -163,15 +163,15 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// use dockworker::DockerBuilder;
+    ///
+    /// # async fn example() -> Result<(), dockworker::DockerError> {
+    /// let builder = DockerBuilder::new().await?;
     /// let networks = builder.list_networks().await?;
     /// for network in networks {
     ///     println!("Found network: {}", network);
     /// }
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     pub async fn list_networks(&self) -> Result<Vec<String>, DockerError> {
         let networks = self
@@ -198,12 +198,12 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// use dockworker::DockerBuilder;
+    ///
+    /// # async fn example() -> Result<(), dockworker::DockerError> {
+    /// let builder = DockerBuilder::new().await?;
     /// builder.create_volume("my_volume").await?;
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     pub async fn create_volume(&self, name: &str) -> Result<(), DockerError> {
         self.get_client()
@@ -233,12 +233,12 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// use dockworker::DockerBuilder;
+    ///
+    /// # async fn example() -> Result<(), dockworker::DockerError> {
+    /// let builder = DockerBuilder::new().await?;
     /// builder.remove_volume("my_volume").await?;
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     pub async fn remove_volume(&self, name: &str) -> Result<(), DockerError> {
         self.get_client()
@@ -259,15 +259,15 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// use dockworker::DockerBuilder;
+    ///
+    /// # async fn example() -> Result<(), dockworker::DockerError> {
+    /// let builder = DockerBuilder::new().await?;
     /// let volumes = builder.list_volumes().await?;
     /// for volume in volumes {
     ///     println!("Found volume: {}", volume);
     /// }
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     pub async fn list_volumes(&self) -> Result<Vec<String>, DockerError> {
         let volumes = self
@@ -301,12 +301,12 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// use dockworker::DockerBuilder;
+    ///
+    /// # async fn example() -> Result<(), dockworker::DockerError> {
+    /// let builder = DockerBuilder::new().await?;
     /// builder.wait_for_container("container_id").await?;
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     pub async fn wait_for_container(&self, container_id: &str) -> Result<(), DockerError> {
         let mut retries = 5;
@@ -350,13 +350,13 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// # use dockworker::DockerBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let builder = DockerBuilder::new()?;
+    /// use dockworker::DockerBuilder;
+    ///
+    /// # async fn example() -> Result<(), dockworker::DockerError> {
+    /// let builder = DockerBuilder::new().await?;
     /// let logs = builder.get_container_logs("container_id").await?;
     /// println!("Container logs: {}", logs);
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     pub async fn get_container_logs(&self, container_id: &str) -> Result<String, DockerError> {
         let mut output = String::new();

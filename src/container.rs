@@ -1,8 +1,5 @@
 //! Utilities for spinning up and managing Docker containers
-//!
-//! This module provides wrappers around [`bollard`] to simplify Docker interactions within blueprints.
 
-pub use bollard;
 use bollard::container::{
     Config, CreateContainerOptions, InspectContainerOptions, ListContainersOptions,
     StartContainerOptions, StopContainerOptions, WaitContainerOptions,
@@ -97,15 +94,14 @@ impl<'a> Container<'a> {
     /// use dockworker::container::Container;
     /// use dockworker::DockerBuilder;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     // We can now start our container
-    ///     container.start(true).await?;
-    ///     Ok(())
-    /// }
+    /// // We can now start our container
+    /// container.start(true).await?;
+    /// # Ok(()) }
     /// ```
     pub fn new<T>(client: &'a Docker, image: T) -> Self
     where
@@ -132,21 +128,20 @@ impl<'a> Container<'a> {
     /// use dockworker::container::Container;
     /// use dockworker::DockerBuilder;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     // We can now start our container and grab its id
-    ///     container.start(false).await?;
+    /// // We can now start our container and grab its id
+    /// container.start(false).await?;
     ///
-    ///     let id = container.id().unwrap();
+    /// let id = container.id().unwrap();
     ///
-    ///     let container2 = Container::from_id(&connection, id).await?;
+    /// let container2 = Container::from_id(&connection, id).await?;
     ///
-    ///     assert_eq!(container.id(), container2.id());
-    ///     Ok(())
-    /// }
+    /// assert_eq!(container.id(), container2.id());
+    /// # Ok(()) }
     /// ```
     pub async fn from_id<T>(client: &'a Docker, id: T) -> Result<Self, Error>
     where
@@ -223,17 +218,16 @@ impl<'a> Container<'a> {
     /// use dockworker::container::Container;
     /// use dockworker::DockerBuilder;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     container.env(["FOO=BAR", "BAZ=QUX"]);
+    /// container.env(["FOO=BAR", "BAZ=QUX"]);
     ///
-    ///     // We can now start our container, and the "FOO" and "BAZ" env vars will be set
-    ///     container.start(true).await?;
-    ///     Ok(())
-    /// }
+    /// // We can now start our container, and the "FOO" and "BAZ" env vars will be set
+    /// container.start(true).await?;
+    /// # Ok(()) }
     /// ```
     pub fn env(&mut self, env: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
         self.options.env = Some(env.into_iter().map(Into::into).collect());
@@ -252,17 +246,16 @@ impl<'a> Container<'a> {
     /// use dockworker::container::Container;
     /// use dockworker::DockerBuilder;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     container.cmd(["echo", "Hello!"]);
+    /// container.cmd(["echo", "Hello!"]);
     ///
-    ///     // We can now start our container, and the command "echo Hello!" will run
-    ///     container.start(true).await?;
-    ///     Ok(())
-    /// }
+    /// // We can now start our container, and the command "echo Hello!" will run
+    /// container.start(true).await?;
+    /// # Ok(()) }
     /// ```
     pub fn cmd(&mut self, cmd: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
         self.options.cmd = Some(cmd.into_iter().map(Into::into).collect());
@@ -280,18 +273,17 @@ impl<'a> Container<'a> {
     /// use dockworker::container::Container;
     /// use dockworker::DockerBuilder;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     // Mount './my-host-dir' at '/some/container/dir' and make it read-only
-    ///     container.binds(["./my-host-dir:/some/container/dir:ro"]);
+    /// // Mount './my-host-dir' at '/some/container/dir' and make it read-only
+    /// container.binds(["./my-host-dir:/some/container/dir:ro"]);
     ///
-    ///     // We can now start our container
-    ///     container.start(true).await?;
-    ///     Ok(())
-    /// }
+    /// // We can now start our container
+    /// container.start(true).await?;
+    /// # Ok(()) }
     /// ```
     pub fn binds(&mut self, binds: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
         self.options.binds = Some(binds.into_iter().map(Into::into).collect());
@@ -322,22 +314,21 @@ impl<'a> Container<'a> {
     /// use dockworker::container::Container;
     /// use dockworker::DockerBuilder;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     container.env(["FOO=BAR", "BAZ=QUX"]);
-    ///     container.cmd(["echo", "Hello!"]);
-    ///     container.binds(["./host-data:/container-data"]);
+    /// container.env(["FOO=BAR", "BAZ=QUX"]);
+    /// container.cmd(["echo", "Hello!"]);
+    /// container.binds(["./host-data:/container-data"]);
     ///
-    ///     // The container is created using the above settings
-    ///     container.create().await?;
+    /// // The container is created using the above settings
+    /// container.create().await?;
     ///
-    ///     // Now it can be started
-    ///     container.start(true).await?;
-    ///     Ok(())
-    /// }
+    /// // Now it can be started
+    /// container.start(true).await?;
+    /// # Ok(()) }
     /// ```
     #[tracing::instrument]
     pub async fn create(&mut self) -> Result<(), bollard::errors::Error> {
@@ -379,22 +370,21 @@ impl<'a> Container<'a> {
     /// use dockworker::container::Container;
     /// use dockworker::DockerBuilder;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     container.cmd(["echo", "Hello!"]);
+    /// container.cmd(["echo", "Hello!"]);
     ///
-    ///     // We can now start our container, and the command "echo Hello!" will run.
-    ///     let wait_for_exit = true;
-    ///     container.start(wait_for_exit).await?;
+    /// // We can now start our container, and the command "echo Hello!" will run.
+    /// let wait_for_exit = true;
+    /// container.start(wait_for_exit).await?;
     ///
-    ///     // Since we waited for the container to exit, we don't have to stop it.
-    ///     // It can now just be removed.
-    ///     container.remove(None).await?;
-    ///     Ok(())
-    /// }
+    /// // Since we waited for the container to exit, we don't have to stop it.
+    /// // It can now just be removed.
+    /// container.remove(None).await?;
+    /// # Ok(()) }
     /// ```
     #[tracing::instrument]
     pub async fn start(&mut self, wait_for_exit: bool) -> Result<(), bollard::errors::Error> {
@@ -427,29 +417,27 @@ impl<'a> Container<'a> {
     /// use std::time::Duration;
     /// use tokio::time;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     container.cmd(["echo", "Hello!"]);
+    /// container.cmd(["echo", "Hello!"]);
     ///
-    ///     let wait_for_exit = false;
-    ///     container.start(wait_for_exit).await?;
+    /// let wait_for_exit = false;
+    /// container.start(wait_for_exit).await?;
     ///
-    ///     loop {
-    ///         let status = container.status().await?.unwrap();
-    ///         if status.is_active() {
-    ///             time::sleep(Duration::from_secs(5)).await;
-    ///             continue;
-    ///         }
-    ///
-    ///         println!("Container exited!");
-    ///         break;
+    /// loop {
+    ///     let status = container.status().await?.unwrap();
+    ///     if status.is_active() {
+    ///         time::sleep(Duration::from_secs(5)).await;
+    ///         continue;
     ///     }
     ///
-    ///     Ok(())
+    ///     println!("Container exited!");
+    ///     break;
     /// }
+    /// # Ok(()) }
     /// ```
     pub async fn status(&self) -> Result<Option<ContainerStatus>, Error> {
         if self.id.is_none() {
@@ -484,20 +472,19 @@ impl<'a> Container<'a> {
     /// use dockworker::container::Container;
     /// use dockworker::DockerBuilder;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
     ///
-    ///     let mut container = Container::new(&connection, "rustlang/rust");
+    /// let mut container = Container::new(&connection, "rustlang/rust");
     ///
-    ///     // Does nothing, the container isn't started
-    ///     container.stop().await?;
+    /// // Does nothing, the container isn't started
+    /// container.stop().await?;
     ///
-    ///     // Stops the running container
-    ///     container.start(false).await?;
-    ///     container.stop().await?;
-    ///     Ok(())
-    /// }
+    /// // Stops the running container
+    /// container.start(false).await?;
+    /// container.stop().await?;
+    /// # Ok(()) }
     /// ```
     #[tracing::instrument]
     pub async fn stop(&mut self) -> Result<(), bollard::errors::Error> {
@@ -526,24 +513,23 @@ impl<'a> Container<'a> {
     /// use dockworker::container::Container;
     /// use dockworker::DockerBuilder;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
     ///
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     // Start our container
-    ///     container.start(false).await?;
+    /// // Start our container
+    /// container.start(false).await?;
     ///
-    ///     let remove_container_options = bollard::container::RemoveContainerOptions {
-    ///         force: true,
-    ///         ..Default::default()
-    ///     };
+    /// let remove_container_options = bollard::container::RemoveContainerOptions {
+    ///     force: true,
+    ///     ..Default::default()
+    /// };
     ///
-    ///     // Kills the container and removes it
-    ///     container.remove(Some(remove_container_options)).await?;
-    ///     Ok(())
-    /// }
+    /// // Kills the container and removes it
+    /// container.remove(Some(remove_container_options)).await?;
+    /// # Ok(()) }
     /// ```
     ///
     /// [`RemoveContainerOptions::force`]: bollard::container::RemoveContainerOptions::force
@@ -572,19 +558,18 @@ impl<'a> Container<'a> {
     /// use dockworker::container::Container;
     /// use dockworker::DockerBuilder;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
     ///
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     // Start our container
-    ///     container.start(false).await?;
+    /// // Start our container
+    /// container.start(false).await?;
     ///
-    ///     // Once this returns, we know that the container has exited.
-    ///     container.wait().await?;
-    ///     Ok(())
-    /// }
+    /// // Once this returns, we know that the container has exited.
+    /// container.wait().await?;
+    /// # Ok(()) }
     /// ```
     #[tracing::instrument]
     pub async fn wait(&self) -> Result<(), bollard::errors::Error> {
@@ -614,35 +599,34 @@ impl<'a> Container<'a> {
     /// use dockworker::DockerBuilder;
     /// use futures::StreamExt;
     ///
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), dockworker::container::Error> {
-    ///     let connection = DockerBuilder::new()?;
-    ///     let mut container = Container::new(connection.get_client(), "rustlang/rust");
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
-    ///     // Start our container and wait for it to exit
-    ///     container.start(true).await?;
+    /// // Start our container and wait for it to exit
+    /// container.start(true).await?;
     ///
-    ///     // We want to collect logs from stderr
-    ///     let logs_options = bollard::container::LogsOptions {
-    ///         stderr: true,
-    ///         follow: true,
-    ///         ..Default::default()
-    ///     };
+    /// // We want to collect logs from stderr
+    /// let logs_options = bollard::container::LogsOptions {
+    ///     stderr: true,
+    ///     follow: true,
+    ///     ..Default::default()
+    /// };
     ///
-    ///     // Get our log stream
-    ///     let mut logs = container
-    ///         .logs(Some(logs_options))
-    ///         .await
-    ///         .expect("logs should be present");
+    /// // Get our log stream
+    /// let mut logs = container
+    ///     .logs(Some(logs_options))
+    ///     .await
+    ///     .expect("logs should be present");
     ///
-    ///     // Now we want to print anything from stderr
-    ///     while let Some(Ok(out)) = logs.next().await {
-    ///         if let bollard::container::LogOutput::StdErr { message } = out {
-    ///             eprintln!("Uh oh! Something was written to stderr: {:?}", message);
-    ///         }
+    /// // Now we want to print anything from stderr
+    /// while let Some(Ok(out)) = logs.next().await {
+    ///     if let bollard::container::LogOutput::StdErr { message } = out {
+    ///         eprintln!("Uh oh! Something was written to stderr: {:?}", message);
     ///     }
-    ///     Ok(())
     /// }
+    /// # Ok(()) }
     /// ```
     #[tracing::instrument]
     pub async fn logs(

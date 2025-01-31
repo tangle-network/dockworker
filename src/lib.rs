@@ -2,7 +2,7 @@
 
 pub use config::{
     compose::{BuildConfig, ComposeConfig, Service},
-    volume::VolumeType,
+    volume::Volume,
 };
 pub use error::DockerError;
 
@@ -11,7 +11,7 @@ pub mod error;
 pub mod parser;
 
 #[cfg(test)]
-pub mod tests;
+mod test_fixtures;
 
 #[cfg(feature = "docker")]
 pub mod builder;
@@ -19,3 +19,5 @@ pub mod builder;
 pub use builder::DockerBuilder;
 #[cfg(feature = "docker")]
 pub mod container;
+#[cfg(feature = "docker")]
+pub use bollard;
