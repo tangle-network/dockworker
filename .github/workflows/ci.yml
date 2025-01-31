@@ -59,6 +59,8 @@ jobs:
     steps:
       - name: checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
 
       - name: install rust
         uses: dtolnay/rust-toolchain@nightly

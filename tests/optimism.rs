@@ -10,8 +10,8 @@ use std::time::Duration;
 use tokio::fs;
 use uuid::Uuid;
 
-const OPTIMISM_FIXTURES: &str = "fixtures/simple-optimism-node";
-const TEST_BASE_DIR: &str = "test-data";
+const OPTIMISM_FIXTURES: &str = "./fixtures/simple-optimism-node";
+const TEST_BASE_DIR: &str = "./test-data";
 
 pub struct OptimismTestContext {
     pub builder: DockerBuilder,
@@ -30,7 +30,7 @@ impl OptimismTestContext {
 
         // Set up initial config
         let compose_path = PathBuf::from(OPTIMISM_FIXTURES).join("docker-compose.yml");
-        let env_path = PathBuf::from("tests/optimism_env.env");
+        let env_path = PathBuf::from("./tests/optimism_env.env");
 
         // Parse config with environment variables
         let mut config = ComposeParser::new()
