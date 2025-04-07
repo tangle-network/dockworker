@@ -4,9 +4,10 @@ use std::path::Path;
 
 #[cfg(feature = "docker")]
 use bollard::service::HostConfig;
-
 #[cfg(feature = "docker")]
-use sysinfo::{DiskExt, System, SystemExt};
+use sysinfo::Disks;
+#[cfg(feature = "docker")]
+use sysinfo::System;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemRequirements {
@@ -53,8 +54,9 @@ impl SystemRequirements {
 
         // Check disk space
         let data_path = Path::new(&self.data_directory);
-        if let Some(disk) = sys
-            .disks()
+
+        let disks = Disks::new_with_refreshed_list();
+        if let Some(disk) = disks
             .iter()
             .find(|disk| data_path.starts_with(disk.mount_point().to_string_lossy().as_ref()))
         {
