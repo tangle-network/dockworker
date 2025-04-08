@@ -1,4 +1,4 @@
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 use bollard::service::{Mount, MountTypeEnum};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -170,7 +170,7 @@ impl Serialize for Volume {
     }
 }
 
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 impl From<Volume> for Mount {
     fn from(volume_type: Volume) -> Self {
         match volume_type {

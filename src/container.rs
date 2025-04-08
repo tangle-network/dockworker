@@ -91,11 +91,11 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
@@ -125,11 +125,11 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
@@ -215,11 +215,11 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
@@ -243,11 +243,11 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
@@ -270,11 +270,11 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
@@ -311,11 +311,11 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
@@ -367,11 +367,11 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
@@ -412,13 +412,13 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     /// use std::time::Duration;
     /// use tokio::time;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///
@@ -469,11 +469,11 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     ///
     /// let mut container = Container::new(&connection, "rustlang/rust");
@@ -510,11 +510,11 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     ///
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
@@ -555,11 +555,11 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     ///
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
@@ -595,12 +595,12 @@ impl<'a> Container<'a> {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::container::Container;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::container::Container;
+    /// use docktopus::DockerBuilder;
     /// use futures::StreamExt;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::container::Error> {
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     /// let mut container = Container::new(connection.get_client(), "rustlang/rust");
     ///

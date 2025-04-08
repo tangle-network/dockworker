@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 /// # Examples
 ///
 /// ```rust,no_run
-/// use dockworker::parser::ComposeParser;
+/// use docktopus::parser::ComposeParser;
 ///
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,7 +56,7 @@ impl ComposeParser {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::parser::ComposeParser;
+    /// use docktopus::parser::ComposeParser;
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = ComposeParser::new().parse_from_path("docker-compose.yml")?;
@@ -117,11 +117,11 @@ impl ComposeParser {
     /// # Examples
     ///
     /// ```
-    /// use dockworker::parser::compose::ComposeParser;
+    /// use docktopus::parser::compose::ComposeParser;
     /// use std::fs::write;
     /// use std::path::Path;
     /// use tempfile::NamedTempFile;
-    /// # use dockworker::error::DockerError;
+    /// # use docktopus::error::DockerError;
     ///
     /// # fn main() -> Result<(), DockerError> {
     /// let compose_content = r#"version: "3"
@@ -179,11 +179,11 @@ impl ComposeParser {
     /// # Examples
     ///
     /// ```rust
-    /// use dockworker::parser::compose::ComposeParser;
+    /// use docktopus::parser::compose::ComposeParser;
     /// use std::collections::HashMap;
     /// use std::fs::write;
     /// use std::path::Path;
-    /// # use dockworker::error::DockerError;
+    /// # use docktopus::error::DockerError;
     ///
     /// # fn main() -> Result<(), DockerError> {
     /// let compose_content = r#"version: "3"

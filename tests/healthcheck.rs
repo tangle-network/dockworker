@@ -2,8 +2,8 @@ mod common;
 
 use color_eyre::Result;
 use common::{is_docker_running, with_docker_cleanup};
-use dockworker::config::{HealthCheck, Method};
-use dockworker::{ComposeConfig, DockerBuilder, Service};
+use docktopus::config::{HealthCheck, Method};
+use docktopus::{ComposeConfig, DockerBuilder, Service};
 use futures_util::TryStreamExt;
 use std::{collections::HashMap, time::Duration};
 

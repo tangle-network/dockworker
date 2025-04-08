@@ -5,7 +5,7 @@ use bollard::container::{
 };
 use color_eyre::Result;
 use common::with_docker_cleanup;
-use dockworker::DockerBuilder;
+use docktopus::DockerBuilder;
 use futures_util::TryStreamExt;
 use std::collections::HashMap;
 use std::time::Duration;

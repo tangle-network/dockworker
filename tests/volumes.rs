@@ -1,7 +1,7 @@
 mod common;
 
 use common::with_docker_cleanup;
-use dockworker::DockerBuilder;
+use docktopus::DockerBuilder;
 
 #[tokio::test]
 async fn test_volume_management() -> color_eyre::Result<()> {

@@ -2,11 +2,11 @@ use crate::error::DockerError;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 use bollard::service::HostConfig;
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 use sysinfo::Disks;
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 use sysinfo::System;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,7 +25,7 @@ pub struct SystemRequirements {
     pub cpuset_cpus: Option<String>,        // CPUs in which to allow execution (0-3, 0,1)
 }
 
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 impl SystemRequirements {
     pub fn check(&self) -> Result<(), DockerError> {
         let mut sys = System::new_all();
