@@ -70,7 +70,7 @@ async fn test_compose_deployment() -> Result<()> {
                 let mut containers_found = false;
                 while retries > 0 {
                     match builder
-                        .get_client()
+                        .client()
                         .list_containers(Some(ListContainersOptions {
                             all: true,
                             filters: filters.clone(),

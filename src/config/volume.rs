@@ -204,6 +204,7 @@ impl From<Volume> for Mount {
 }
 
 impl Volume {
+    #[must_use]
     pub fn matches_name(&self, name: &str) -> bool {
         match self {
             Volume::Named(volume_name) => volume_name.split(':').next().unwrap_or("") == name,

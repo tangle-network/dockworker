@@ -1,5 +1,5 @@
-use crate::error::DockerError;
 use crate::DockerBuilder;
+use crate::error::DockerError;
 use bollard::container::LogsOptions;
 use bollard::exec::{CreateExecOptions, StartExecOptions};
 use bollard::network::CreateNetworkOptions;
@@ -10,12 +10,11 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 impl DockerBuilder {
-    /// Network management functions for creating, removing and managing Docker networks
+    /// Creates a network with extra creation settings
     ///
-    /// These functions provide retry capabilities and error handling for network operations:
-    /// - Creating networks with configurable retry policies
-    /// - Removing networks
-    /// - Managing network labels and configurations
+    /// # Errors
+    ///
+    /// Will return a `DockerError::BollardError` if the operation fails after the given number of retries
     ///
     /// # Examples
     /// ```no_run
@@ -45,7 +44,7 @@ impl DockerBuilder {
 
         while attempts < max_retries {
             let result = self
-                .get_client()
+                .client()
                 .create_network(CreateNetworkOptions {
                     name: name.to_string(),
                     driver: "bridge".to_string(),
@@ -83,6 +82,10 @@ impl DockerBuilder {
     ///
     /// Returns a `Result` containing unit `()` on success, or a `DockerError` if removal fails
     ///
+    /// # Errors
+    ///
+    /// Will return a `DockerError::BollardError` if the operation fails
+    ///
     /// # Examples
     ///
     /// ```rust,no_run
@@ -94,7 +97,7 @@ impl DockerBuilder {
     /// # Ok(()) }
     /// ```
     pub async fn remove_network(&self, name: &str) -> Result<(), DockerError> {
-        self.get_client()
+        self.client()
             .remove_network(name)
             .await
             .map_err(DockerError::BollardError)
@@ -113,6 +116,10 @@ impl DockerBuilder {
     /// # Returns
     ///
     /// Returns a `Result` containing unit `()` on success, or a `DockerError` if the pull fails
+    ///
+    /// # Errors
+    ///
+    /// Will return a `DockerError::BollardError` if the pull fails
     ///
     /// # Examples
     ///
@@ -143,9 +150,8 @@ impl DockerBuilder {
         );
 
         while let Some(pull_result) = pull_stream.next().await {
-            match pull_result {
-                Ok(_) => continue,
-                Err(e) => return Err(DockerError::BollardError(e)),
+            if let Err(e) = pull_result {
+                return Err(DockerError::BollardError(e));
             }
         }
 
@@ -159,6 +165,10 @@ impl DockerBuilder {
     /// # Returns
     ///
     /// Returns a `Result` containing a `Vec<String>` of network names on success, or a `DockerError` if the operation fails
+    ///
+    /// # Errors
+    ///
+    /// Will return a `DockerError::BollardError` if the operation fails
     ///
     /// # Examples
     ///
@@ -175,7 +185,7 @@ impl DockerBuilder {
     /// ```
     pub async fn list_networks(&self) -> Result<Vec<String>, DockerError> {
         let networks = self
-            .get_client()
+            .client()
             .list_networks::<String>(None)
             .await
             .map_err(DockerError::BollardError)?;
@@ -195,6 +205,10 @@ impl DockerBuilder {
     ///
     /// Returns `Ok(())` on successful volume creation, or a `DockerError` if creation fails
     ///
+    /// # Errors
+    ///
+    /// Will return a `DockerError::BollardError` if the operation fails
+    ///
     /// # Examples
     ///
     /// ```rust,no_run
@@ -206,7 +220,7 @@ impl DockerBuilder {
     /// # Ok(()) }
     /// ```
     pub async fn create_volume(&self, name: &str) -> Result<(), DockerError> {
-        self.get_client()
+        self.client()
             .create_volume(CreateVolumeOptions {
                 name,
                 driver: "local",
@@ -230,6 +244,10 @@ impl DockerBuilder {
     ///
     /// Returns `Ok(())` on successful volume removal, or a `DockerError` if removal fails
     ///
+    /// # Errors
+    ///
+    /// Will return a `DockerError::BollardError` if the operation fails
+    ///
     /// # Examples
     ///
     /// ```rust,no_run
@@ -241,7 +259,7 @@ impl DockerBuilder {
     /// # Ok(()) }
     /// ```
     pub async fn remove_volume(&self, name: &str) -> Result<(), DockerError> {
-        self.get_client()
+        self.client()
             .remove_volume(name, None)
             .await
             .map_err(DockerError::BollardError)
@@ -255,6 +273,10 @@ impl DockerBuilder {
     /// # Returns
     ///
     /// Returns a `Result` containing a vector of volume names as strings, or a `DockerError` if the operation fails
+    ///
+    /// # Errors
+    ///
+    /// Will return a `DockerError::BollardError` if the operation fails
     ///
     /// # Examples
     ///
@@ -271,7 +293,7 @@ impl DockerBuilder {
     /// ```
     pub async fn list_volumes(&self) -> Result<Vec<String>, DockerError> {
         let volumes = self
-            .get_client()
+            .client()
             .list_volumes(None::<ListVolumesOptions<String>>)
             .await
             .map_err(DockerError::BollardError)?;
@@ -298,6 +320,11 @@ impl DockerBuilder {
     /// Returns `Ok(())` if the container is running, or a `DockerError` if the container fails to start
     /// after maximum retries.
     ///
+    /// # Errors
+    ///
+    /// * Unable to inspect the container
+    /// * The container is not running after 5 retries
+    ///
     /// # Examples
     ///
     /// ```rust,no_run
@@ -312,7 +339,7 @@ impl DockerBuilder {
         let mut retries = 5;
         while retries > 0 {
             let inspect = self
-                .get_client()
+                .client()
                 .inspect_container(container_id, None)
                 .await
                 .map_err(DockerError::BollardError)?;
@@ -347,6 +374,10 @@ impl DockerBuilder {
     /// Returns `Ok(String)` containing the container logs, or a `DockerError` if there was an error
     /// retrieving the logs.
     ///
+    /// # Errors
+    ///
+    /// Will return a `DockerError::BollardError` if the operation fails
+    ///
     /// # Examples
     ///
     /// ```rust,no_run
@@ -360,7 +391,7 @@ impl DockerBuilder {
     /// ```
     pub async fn get_container_logs(&self, container_id: &str) -> Result<String, DockerError> {
         let mut output = String::new();
-        let mut stream = self.get_client().logs(
+        let mut stream = self.client().logs(
             container_id,
             Some(LogsOptions::<String> {
                 stdout: true,
@@ -380,6 +411,20 @@ impl DockerBuilder {
         Ok(output)
     }
 
+    /// Executes a command inside a Docker container
+    ///
+    /// This method executes the specified command inside the specified container and returns the
+    /// output as a string.
+    ///
+    /// # Arguments
+    ///
+    /// * `container_id` - ID of the container to execute the command in
+    /// * `cmd` - Command to execute in the container
+    /// * `env` - Environment variables to set in the container
+    ///
+    /// # Errors
+    ///
+    /// Will return a `DockerError::BollardError` if the operation fails
     pub async fn exec_in_container(
         &self,
         container_id: &str,
@@ -387,13 +432,13 @@ impl DockerBuilder {
         env: Option<HashMap<String, String>>,
     ) -> Result<String, DockerError> {
         let exec = self
-            .get_client()
+            .client()
             .create_exec(
                 container_id,
                 CreateExecOptions::<String> {
                     attach_stdout: Some(true),
                     attach_stderr: Some(true),
-                    cmd: Some(cmd.into_iter().map(|c| c.to_string()).collect()),
+                    cmd: Some(cmd.into_iter().map(ToString::to_string).collect()),
                     env: env.map(|e| e.into_iter().map(|(k, v)| format!("{}={}", k, v)).collect()),
                     ..Default::default()
                 },
@@ -402,7 +447,7 @@ impl DockerBuilder {
             .map_err(DockerError::BollardError)?;
 
         let output = self
-            .get_client()
+            .client()
             .start_exec(&exec.id, None::<StartExecOptions>)
             .await
             .map_err(DockerError::BollardError)?;

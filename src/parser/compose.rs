@@ -53,6 +53,11 @@ impl ComposeParser {
     ///
     /// * `path` - Path to the Docker Compose file
     ///
+    /// # Errors
+    ///
+    /// * `path` does not exist
+    /// * See [`ComposeParser::parse()`]
+    ///
     /// # Examples
     ///
     /// ```rust,no_run
@@ -60,14 +65,19 @@ impl ComposeParser {
     ///
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = ComposeParser::new().parse_from_path("docker-compose.yml")?;
-    /// # Ok(())
-    /// # }
+    /// # Ok(()) }
     /// ```
     pub fn parse_from_path<P: AsRef<Path>>(self, path: P) -> Result<ComposeConfig, DockerError> {
         let mut f = File::open(path)?;
         self.parse(&mut f)
     }
 
+    /// Parses a Docker Compose file from the given reader
+    ///
+    /// # Errors
+    ///
+    /// * The file is malformed
+    /// * Required environment variables are missing, see [`ComposeParser::env_file()`] and [`ComposeParser::env_vars()`]
     pub fn parse<R>(self, reader: &mut R) -> Result<ComposeConfig, DockerError>
     where
         R: Read,
@@ -79,7 +89,7 @@ impl ComposeParser {
                 DockerError::ValidationError(format!("Failed to read env file: {}", e))
             })?;
 
-            env_vars.extend(env::parse_env_file(&env_content)?);
+            env_vars.extend(env::parse_env_file(&env_content));
         }
 
         let mut config_bytes = Vec::new();
@@ -88,12 +98,11 @@ impl ComposeParser {
         let compose = String::from_utf8(config_bytes).map_err(|e| {
             DockerError::ValidationError(format!("Failed to read compose file: {}", e))
         })?;
-        let processed_content = env::substitute_env_vars(&compose, &env_vars)?;
+        let processed_content = env::substitute_env_vars(&compose, &env_vars);
 
         let config: ComposeConfig =
             serde_yaml::from_str(&processed_content).map_err(DockerError::YamlError)?;
 
-        // Validate environment variables
         validate_required_env_vars(&config, &env_vars)?;
 
         Ok(config)
@@ -101,6 +110,8 @@ impl ComposeParser {
 }
 
 impl ComposeParser {
+    /// Create a new `ComposeParser`
+    #[must_use]
     pub fn new() -> Self {
         Self {
             env_file_path: None,
@@ -162,19 +173,20 @@ impl ComposeParser {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use]
     pub fn env_file<P: AsRef<Path>>(mut self, path: P) -> Self {
         self.env_file_path = Some(path.as_ref().to_path_buf());
         self
     }
 
-    /// Parses a Docker Compose file with environment variables from a HashMap
+    /// Parses a Docker Compose file with environment variables from a [`HashMap`]
     ///
     /// This method is useful when you want to provide environment variables
     /// programmatically rather than from a file.
     ///
     /// # Arguments
     ///
-    /// * `vars` - HashMap containing environment variable key-value pairs
+    /// * `vars` - [`HashMap`] containing environment variable key-value pairs
     ///
     /// # Examples
     ///
@@ -224,6 +236,7 @@ impl ComposeParser {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use]
     pub fn env_vars(mut self, vars: HashMap<String, String>) -> Self {
         self.env_vars = Some(vars);
         self

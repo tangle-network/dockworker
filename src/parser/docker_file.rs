@@ -5,6 +5,11 @@ use crate::config::docker_file::{DockerCommand, DockerfileConfig};
 use crate::error::DockerError;
 use std::collections::HashMap;
 
+/// Parse a Dockerfile
+///
+/// # Errors
+///
+/// This will error if at any point the file is malformed.
 pub fn parse(content: &str) -> Result<DockerfileConfig, DockerError> {
     let mut config = DockerfileConfig {
         base_image: String::new(),
@@ -200,12 +205,12 @@ fn parse_command(config: &mut DockerfileConfig, line: &str) -> Result<(), Docker
                 // Handle --flag=value format
                 if part.starts_with("--") {
                     let flag_part: Vec<&str> = part.splitn(2, '=').collect();
-                    match flag_part[0] {
-                        "--interval" | "--timeout" | "--start-period" => {
+                    match flag_part.first() {
+                        Some(val @ (&"--interval" | &"--timeout" | &"--start-period")) => {
                             let value = if flag_part.len() == 2 {
                                 Some(flag_part[1].to_string())
                             } else {
-                                parts.next().map(|s| s.to_string())
+                                parts.next().map(ToString::to_string)
                             };
 
                             if value.is_none() {
@@ -215,14 +220,14 @@ fn parse_command(config: &mut DockerfileConfig, line: &str) -> Result<(), Docker
                                 )));
                             }
 
-                            match flag_part[0] {
+                            match *val {
                                 "--interval" => interval = value,
                                 "--timeout" => timeout = value,
                                 "--start-period" => start_period = value,
                                 _ => unreachable!(),
                             }
                         }
-                        "--retries" => {
+                        Some(&"--retries") => {
                             let value = if flag_part.len() == 2 {
                                 flag_part[1].parse().ok()
                             } else {
@@ -243,7 +248,6 @@ fn parse_command(config: &mut DockerfileConfig, line: &str) -> Result<(), Docker
                             )));
                         }
                     }
-                    continue;
                 }
             }
 
@@ -337,7 +341,7 @@ fn parse_command(config: &mut DockerfileConfig, line: &str) -> Result<(), Docker
             let parts: Vec<&str> = args.split(':').collect();
             config.commands.push(DockerCommand::User {
                 user: parts[0].to_string(),
-                group: parts.get(1).map(|g| g.to_string()),
+                group: parts.get(1).map(ToString::to_string),
             });
         }
         "VOLUME" => {
@@ -371,7 +375,7 @@ fn parse_chown_option(args: &str) -> (Option<String>, String) {
     if args.starts_with("--chown=") {
         let parts: Vec<&str> = args.splitn(2, ' ').collect();
         let chown = parts[0].trim_start_matches("--chown=").to_string();
-        (Some(chown), parts.get(1).unwrap_or(&"").to_string())
+        (Some(chown), (*parts.get(1).unwrap_or(&"")).to_string())
     } else {
         (None, args.to_string())
     }

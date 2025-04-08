@@ -1,11 +1,11 @@
 use crate::{
+    DockerBuilder,
     config::{
         compose::{ComposeConfig, Service},
         health::HealthCheck,
         volume::Volume,
     },
     error::DockerError,
-    DockerBuilder,
 };
 use bollard::container::{Config, CreateContainerOptions, StartContainerOptions};
 use bollard::network::CreateNetworkOptions;
@@ -35,7 +35,7 @@ impl DockerBuilder {
     ///
     /// # Returns
     ///
-    /// Returns a `Result` containing a HashMap mapping service names to their container IDs,
+    /// Returns a `Result` containing a [`HashMap`] mapping service names to their container IDs,
     /// or a `DockerError` if deployment fails
     ///
     /// # Examples
@@ -83,14 +83,14 @@ impl DockerBuilder {
     ///
     /// # Returns
     ///
-    /// Returns a `Result` containing a HashMap mapping service names to their container IDs,
+    /// Returns a `Result` containing a [`HashMap`] mapping service names to their container IDs,
     /// or a `DockerError` if deployment fails
     ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use docktopus::parser::ComposeParser;
     /// use docktopus::DockerBuilder;
+    /// use docktopus::parser::ComposeParser;
     ///
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), docktopus::DockerError> {
@@ -120,7 +120,7 @@ impl DockerBuilder {
         base_dir: PathBuf,
     ) -> Result<HashMap<String, String>, DockerError> {
         // Make all bind mount paths absolute relative to the base directory
-        self.make_bind_paths_absolute(config, Some(base_dir.clone()))?;
+        make_bind_paths_absolute(config, Some(base_dir.clone()))?;
 
         let network_name = format!("compose_network_{}", Uuid::new_v4());
 
@@ -157,7 +157,10 @@ impl DockerBuilder {
 
         // Deploy services in order
         for service_name in service_order {
-            let service = config.services.get(&service_name).unwrap();
+            let Some(service) = config.services.get(&service_name) else {
+                continue;
+            };
+
             let container_id = self
                 .deploy_service(&service_name, service, &network_name, &base_dir)
                 .await?;
@@ -167,79 +170,20 @@ impl DockerBuilder {
         Ok(container_ids)
     }
 
-    /// Creates a Docker HostConfig for a service
+    /// Creates a Docker [`HealthConfig`] from a [`HealthCheck`] configuration
     ///
-    /// This method generates the HostConfig needed to create a Docker container for a service.
-    /// It handles:
-    /// - Network configuration
-    /// - Resource limits and requirements
-    /// - Volume mounts
-    /// - Port bindings
-    ///
-    /// # Arguments
-    ///
-    /// * `service` - The service configuration to create a host config for
-    /// * `network_name` - Name of the Docker network to connect the container to
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` containing the `HostConfig` or a `DockerError` if creation fails
-    fn create_host_config(
-        &self,
-        service: &Service,
-        network_name: &str,
-    ) -> Result<HostConfig, DockerError> {
-        let mut host_config = HostConfig {
-            network_mode: Some(network_name.to_string()),
-            ..Default::default()
-        };
-
-        // Add resource limits if specified
-        if let Some(requirements) = &service.requirements {
-            host_config = requirements.to_host_config();
-            host_config.network_mode = Some(network_name.to_string());
-        }
-
-        // Configure mounts if volumes are specified
-        if let Some(volumes) = &service.volumes {
-            let mounts: Vec<Mount> = volumes.iter().cloned().map(Mount::from).collect();
-            host_config.mounts = Some(mounts);
-        }
-
-        // Configure port bindings
-        if let Some(ports) = &service.ports {
-            let mut port_bindings = HashMap::new();
-            for port_mapping in ports {
-                let parts: Vec<&str> = port_mapping.split(':').collect();
-                if parts.len() == 2 {
-                    port_bindings.insert(
-                        format!("{}/tcp", parts[1]),
-                        Some(vec![PortBinding {
-                            host_ip: Some("0.0.0.0".to_string()),
-                            host_port: Some(parts[0].to_string()),
-                        }]),
-                    );
-                }
-            }
-            host_config.port_bindings = Some(port_bindings);
-        }
-
-        Ok(host_config)
-    }
-
-    /// Creates a Docker HealthConfig from a HealthCheck configuration
-    ///
-    /// This method converts our internal HealthCheck configuration into the format
+    /// This method converts our internal [`HealthCheck`] configuration into the format
     /// expected by the Docker API. It sets up a health check that uses curl to
     /// make HTTP requests and verify the response status code.
     ///
     /// # Arguments
     ///
-    /// * `health` - The HealthCheck configuration to convert
+    /// * `health` - The [`HealthCheck`] configuration to convert
     ///
     /// # Returns
     ///
-    /// Returns a `HealthConfig` struct configured according to the input parameters
+    /// Returns a [`HealthConfig`] struct configured according to the input parameters
+    #[allow(clippy::cast_possible_truncation)]
     fn create_health_config(health: &HealthCheck) -> HealthConfig {
         HealthConfig {
             test: Some(vec![
@@ -251,7 +195,7 @@ impl DockerBuilder {
             ]),
             interval: Some(health.interval.as_nanos() as i64),
             timeout: Some(health.timeout.as_nanos() as i64),
-            retries: Some(health.retries as i64),
+            retries: Some(i64::from(health.retries)),
             start_period: None,
             start_interval: None,
         }
@@ -287,7 +231,7 @@ impl DockerBuilder {
             let tag = format!("compose_{}", service_name);
 
             // Make context path absolute and normalized
-            let context_path = Self::normalize_path(base_dir, &build_config.context)?;
+            let context_path = normalize_path(base_dir, &build_config.context);
 
             // Get the dockerfile path relative to the context
             let dockerfile_path = if let Some(dockerfile) = &build_config.dockerfile {
@@ -322,7 +266,7 @@ impl DockerBuilder {
             for entry in walkdir::WalkDir::new(&context_path)
                 .follow_links(true)
                 .into_iter()
-                .filter_map(|e| e.ok())
+                .filter_map(Result::ok)
             {
                 let path = entry.path();
                 if path.is_file() {
@@ -386,9 +330,8 @@ impl DockerBuilder {
             );
 
             while let Some(pull_result) = pull_stream.next().await {
-                match pull_result {
-                    Ok(_) => continue,
-                    Err(e) => return Err(DockerError::BollardError(e)),
+                if let Err(e) = pull_result {
+                    return Err(DockerError::BollardError(e));
                 }
             }
         }
@@ -403,7 +346,7 @@ impl DockerBuilder {
         };
 
         // Configure host settings
-        let host_config = self.create_host_config(service, network_name)?;
+        let host_config = create_host_config(service, network_name);
         container_config.host_config = Some(host_config);
 
         // Add health check if specified
@@ -447,7 +390,7 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust
-    /// use docktopus::{config::compose::Service, DockerBuilder};
+    /// use docktopus::{DockerBuilder, config::compose::Service};
     /// use std::collections::HashMap;
     ///
     /// # fn example() {
@@ -460,70 +403,109 @@ impl DockerBuilder {
     /// assert_eq!(env_vars, Some(vec!["DEBUG=true".to_string()]));
     /// # }
     /// ```
+    #[must_use]
     pub fn prepare_environment_variables(service: &Service) -> Option<Vec<String>> {
         service
             .environment
             .as_ref()
             .map(|env| env.iter().map(|(k, v)| format!("{}={}", k, v)).collect())
     }
+}
 
-    fn make_bind_paths_absolute(
-        &self,
-        config: &mut ComposeConfig,
-        base_dir: Option<PathBuf>,
-    ) -> Result<(), DockerError> {
-        let base = if let Some(dir) = base_dir {
-            dir
-        } else {
-            std::env::current_dir().map_err(|e| {
+fn make_bind_paths_absolute(
+    config: &mut ComposeConfig,
+    base_dir: Option<PathBuf>,
+) -> Result<(), DockerError> {
+    let base = if let Some(dir) = base_dir {
+        dir
+    } else {
+        std::env::current_dir().map_err(|e| {
+            DockerError::ValidationError(format!("Failed to get current directory: {}", e))
+        })?
+    };
+
+    // Ensure base directory is absolute
+    let base = if base.is_absolute() {
+        base
+    } else {
+        std::env::current_dir()
+            .map_err(|e| {
                 DockerError::ValidationError(format!("Failed to get current directory: {}", e))
             })?
-        };
+            .join(base)
+    };
 
-        // Ensure base directory is absolute
-        let base = if base.is_absolute() {
-            base
-        } else {
-            std::env::current_dir()
-                .map_err(|e| {
-                    DockerError::ValidationError(format!("Failed to get current directory: {}", e))
-                })?
-                .join(base)
-        };
-
-        for service in config.services.values_mut() {
-            if let Some(volumes) = &mut service.volumes {
-                for volume in volumes.iter_mut() {
-                    if let Volume::Bind { source, .. } = volume {
-                        let absolute_path = Self::normalize_path(&base, source)?;
-                        *source = absolute_path.to_string_lossy().into_owned();
-                    }
+    for service in config.services.values_mut() {
+        if let Some(volumes) = &mut service.volumes {
+            for volume in volumes.iter_mut() {
+                if let Volume::Bind { source, .. } = volume {
+                    let absolute_path = normalize_path(&base, source);
+                    *source = absolute_path.to_string_lossy().into_owned();
                 }
             }
         }
-        Ok(())
+    }
+    Ok(())
+}
+
+fn normalize_path(base: &Path, path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        return path;
     }
 
-    fn normalize_path(base: &Path, path: &str) -> Result<PathBuf, DockerError> {
-        let path = PathBuf::from(path);
-        if path.is_absolute() {
-            Ok(path)
-        } else {
-            // Remove any ./ or ../ from the path
-            let normalized = path.components().fold(PathBuf::new(), |mut acc, comp| {
-                match comp {
-                    std::path::Component::Normal(x) => acc.push(x),
-                    std::path::Component::ParentDir => {
-                        acc.pop();
-                    }
-                    std::path::Component::CurDir => {}
-                    _ => acc.push(comp.as_os_str()),
-                }
-                acc
-            });
-
-            // Join with base path and normalize
-            Ok(base.join(normalized))
+    // Remove any ./ or ../ from the path
+    let normalized = path.components().fold(PathBuf::new(), |mut acc, comp| {
+        match comp {
+            std::path::Component::Normal(x) => acc.push(x),
+            std::path::Component::ParentDir => {
+                acc.pop();
+            }
+            std::path::Component::CurDir => {}
+            _ => acc.push(comp.as_os_str()),
         }
+        acc
+    });
+
+    // Join with base path and normalize
+    base.join(normalized)
+}
+
+fn create_host_config(service: &Service, network_name: &str) -> HostConfig {
+    let mut host_config = HostConfig {
+        network_mode: Some(network_name.to_string()),
+        ..Default::default()
+    };
+
+    // Add resource limits if specified
+    if let Some(requirements) = &service.requirements {
+        host_config = requirements.to_host_config();
+        host_config.network_mode = Some(network_name.to_string());
     }
+
+    // Configure mounts if volumes are specified
+    if let Some(volumes) = &service.volumes {
+        let mounts: Vec<Mount> = volumes.iter().cloned().map(Mount::from).collect();
+        host_config.mounts = Some(mounts);
+    }
+
+    // Configure port bindings
+    if let Some(ports) = &service.ports {
+        let mut port_bindings = HashMap::new();
+        for port_mapping in ports {
+            let parts: Vec<&str> = port_mapping.split(':').collect();
+            if parts.len() == 2 {
+                port_bindings.insert(
+                    format!("{}/tcp", parts[1]),
+                    Some(vec![PortBinding {
+                        host_ip: Some("0.0.0.0".to_string()),
+                        host_port: Some(parts[0].to_string()),
+                    }]),
+                );
+            }
+        }
+        host_config.port_bindings = Some(port_bindings);
+    }
+
+    host_config
 }

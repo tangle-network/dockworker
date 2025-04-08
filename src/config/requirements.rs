@@ -27,6 +27,11 @@ pub struct SystemRequirements {
 
 #[cfg(feature = "deploy")]
 impl SystemRequirements {
+    /// Check if this host meets the system requirements
+    ///
+    /// # Errors
+    ///
+    /// Will return an error indicating the resources that are missing
     pub fn check(&self) -> Result<(), DockerError> {
         let mut sys = System::new_all();
         sys.refresh_all();
@@ -43,7 +48,7 @@ impl SystemRequirements {
         // Check memory limits if specified
         if let Some(limit) = &self.memory_limit {
             let limit_bytes = parse_memory_string(limit)?;
-            let total_bytes = (total_memory as i64) * 1024 * 1024 * 1024;
+            let total_bytes = total_memory * 1024 * 1024 * 1024;
             if limit_bytes > total_bytes {
                 return Err(DockerError::ValidationError(format!(
                     "Memory limit {} exceeds available memory {}GB",
@@ -82,18 +87,21 @@ impl SystemRequirements {
         Ok(())
     }
 
+    #[must_use]
+    #[allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
     pub fn to_host_config(&self) -> HostConfig {
         let mut host_config = HostConfig::default();
 
         // Set resource limits
         if let Some(memory) = &self.memory_limit {
-            host_config.memory = parse_memory_string(memory).ok();
+            host_config.memory = parse_memory_string(memory).ok().map(|v| v as i64);
         }
         if let Some(swap) = &self.memory_swap {
-            host_config.memory_swap = parse_memory_string(swap).ok();
+            host_config.memory_swap = parse_memory_string(swap).ok().map(|v| v as i64);
         }
         if let Some(reservation) = &self.memory_reservation {
-            host_config.memory_reservation = parse_memory_string(reservation).ok();
+            host_config.memory_reservation =
+                parse_memory_string(reservation).ok().map(|v| v as i64);
         }
         host_config.cpu_shares = self.cpu_shares;
         host_config.cpuset_cpus = self.cpuset_cpus.clone();
@@ -109,11 +117,15 @@ fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
-// Helper function to parse memory strings like "1G", "512M" into bytes
-pub fn parse_memory_string(memory: &str) -> Result<i64, DockerError> {
+/// Helper function to parse memory strings like "1G", "512M" into bytes
+///
+/// # Errors
+///
+/// The input is not a valid memory string
+pub fn parse_memory_string(memory: &str) -> Result<u64, DockerError> {
     let len = memory.len();
     let (num, unit) = memory.split_at(len - 1);
-    let base = num.parse::<i64>().map_err(|_| {
+    let base = num.parse::<u64>().map_err(|_| {
         DockerError::InvalidResourceLimit(format!("Invalid memory value: {}", memory))
     })?;
 

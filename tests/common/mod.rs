@@ -1,7 +1,7 @@
+use bollard::Docker;
 use bollard::container::ListContainersOptions;
 use bollard::network::ListNetworksOptions;
 use bollard::volume::ListVolumesOptions;
-use bollard::Docker;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -74,7 +74,7 @@ impl DockerTestContext {
                         // Try to stop the container first
                         let stop_result = self.client.stop_container(&id, None).await;
                         match stop_result {
-                            Ok(_) => println!("Stopped container: {}", id),
+                            Ok(()) => println!("Stopped container: {}", id),
                             Err(e) => println!("Error stopping container {}: {}", id, e),
                         }
 
@@ -90,7 +90,7 @@ impl DockerTestContext {
                             )
                             .await
                         {
-                            Ok(_) => println!("Removed container: {}", id),
+                            Ok(()) => println!("Removed container: {}", id),
                             Err(e) => println!("Error removing container {}: {}", id, e),
                         }
                     }
@@ -117,7 +117,7 @@ impl DockerTestContext {
                 if let Some(id) = network.id {
                     println!("Removing network by label: {}", id);
                     match self.client.remove_network(&id).await {
-                        Ok(_) => println!("Removed network: {}", id),
+                        Ok(()) => println!("Removed network: {}", id),
                         Err(e) => println!("Error removing network {}: {}", id, e),
                     }
                 }
@@ -146,7 +146,7 @@ impl DockerTestContext {
                 if let Some(id) = network.id {
                     println!("Removing network by name: {}", id);
                     match self.client.remove_network(&id).await {
-                        Ok(_) => println!("Removed network: {}", id),
+                        Ok(()) => println!("Removed network: {}", id),
                         Err(e) => println!("Error removing network {}: {}", id, e),
                     }
                 }
@@ -184,7 +184,7 @@ impl DockerTestContext {
                     for volume in volume_list {
                         println!("Removing volume: {}", volume.name);
                         match self.client.remove_volume(&volume.name, None).await {
-                            Ok(_) => println!("Removed volume: {}", volume.name),
+                            Ok(()) => println!("Removed volume: {}", volume.name),
                             Err(e) => println!("Error removing volume {}: {}", volume.name, e),
                         }
                     }
