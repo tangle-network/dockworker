@@ -29,11 +29,17 @@ impl DockerBuilder {
     ///
     /// Returns a `Result` containing the ID of the created container, or a `DockerError` if deployment fails
     ///
+    /// # Errors
+    ///
+    /// * Unable to create a temporary build context directory
+    /// * Unable to build the Docker image
+    /// * Unable to create or start the container
+    ///
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use docktopus::config::docker_file::{DockerCommand, DockerfileConfig};
     /// use docktopus::DockerBuilder;
+    /// use docktopus::config::docker_file::{DockerCommand, DockerfileConfig};
     ///
     /// # async fn example() -> Result<(), docktopus::DockerError> {
     /// let builder = DockerBuilder::new().await?;
@@ -102,19 +108,18 @@ impl DockerBuilder {
             .build_image(build_opts, None, Some(context.into()));
 
         while let Some(build_result) = build_stream.next().await {
-            match build_result {
-                Ok(_) => continue,
-                Err(e) => return Err(DockerError::BollardError(e)),
+            if let Err(e) = build_result {
+                return Err(DockerError::BollardError(e));
             }
         }
 
         // Create and start container from our image
         let container_config = Config {
             image: Some(tag.to_string()),
-            cmd: command.map(|v| v.iter().map(|s| s.to_string()).collect()),
-            env: env.map(|v| v.iter().map(|s| s.to_string()).collect()),
+            cmd: command.map(|v| v.iter().map(ToString::to_string).collect()),
+            env: env.map(|v| v.iter().map(ToString::to_string).collect()),
             host_config: Some(HostConfig {
-                binds: volumes.map(|v| v.iter().map(|s| s.to_string()).collect()),
+                binds: volumes.map(|v| v.iter().map(ToString::to_string).collect()),
                 network_mode: network,
                 ..Default::default()
             }),

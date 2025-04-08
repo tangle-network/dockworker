@@ -46,6 +46,10 @@ impl DockerfileConfig {
     ///
     /// See [`DockerfileConfig::parse`].
     ///
+    /// # Errors
+    ///
+    /// See [`DockerfileConfig::parse()`].
+    ///
     /// # Examples
     ///
     /// ```rust,no_run

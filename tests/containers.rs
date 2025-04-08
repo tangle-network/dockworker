@@ -23,7 +23,7 @@ async fn test_container_management() -> Result<()> {
             // Pull image first to avoid potential "No such image" errors
             println!("Pulling alpine image...");
             builder
-                .get_client()
+                .client()
                 .create_image(
                     Some(bollard::image::CreateImageOptions {
                         from_image: "alpine",
@@ -42,7 +42,7 @@ async fn test_container_management() -> Result<()> {
             labels.insert("test_id", &*test_id);
 
             let container = builder
-                .get_client()
+                .client()
                 .create_container(
                     Some(CreateContainerOptions {
                         name: container_name.clone(),
@@ -64,7 +64,7 @@ async fn test_container_management() -> Result<()> {
 
             // Log container state after creation
             if let Ok(inspect) = builder
-                .get_client()
+                .client()
                 .inspect_container(&container.id, None::<InspectContainerOptions>)
                 .await
             {
@@ -78,14 +78,14 @@ async fn test_container_management() -> Result<()> {
             let mut start_success = false;
             while start_retries > 0 && !start_success {
                 match builder
-                    .get_client()
+                    .client()
                     .start_container(
                         &container.id,
                         None::<bollard::container::StartContainerOptions<String>>,
                     )
                     .await
                 {
-                    Ok(_) => {
+                    Ok(()) => {
                         println!("Container started successfully");
                         start_success = true;
                     }
@@ -113,7 +113,7 @@ async fn test_container_management() -> Result<()> {
 
             // Log container state after start
             if let Ok(inspect) = builder
-                .get_client()
+                .client()
                 .inspect_container(&container.id, None::<InspectContainerOptions>)
                 .await
             {
@@ -132,7 +132,7 @@ async fn test_container_management() -> Result<()> {
             while retries > 0 {
                 println!("Checking container running state, attempt {}", 11 - retries);
                 match builder
-                    .get_client()
+                    .client()
                     .list_containers(Some(ListContainersOptions {
                         all: true, // Check all containers, not just running ones
                         filters: filters.clone(),

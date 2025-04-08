@@ -2,8 +2,8 @@ mod common;
 
 use bollard::container::ListContainersOptions;
 use common::{is_docker_running, with_docker_cleanup};
-use docktopus::config::{DockerCommand, DockerfileConfig};
 use docktopus::DockerBuilder;
+use docktopus::config::{DockerCommand, DockerfileConfig};
 use futures_util::TryStreamExt;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -36,7 +36,7 @@ async fn test_dockerfile_deployment() -> color_eyre::Result<()> {
             // Pull alpine image first
             println!("Pulling alpine image...");
             builder
-                .get_client()
+                .client()
                 .create_image(
                     Some(bollard::image::CreateImageOptions {
                         from_image: "alpine",
@@ -92,7 +92,7 @@ async fn test_dockerfile_deployment() -> color_eyre::Result<()> {
             while retries > 0 {
                 println!("Checking container state, attempt {}", 6 - retries);
                 if let Ok(containers) = builder
-                    .get_client()
+                    .client()
                     .list_containers(Some(ListContainersOptions {
                         all: true,
                         filters: filters.clone(),
@@ -100,12 +100,12 @@ async fn test_dockerfile_deployment() -> color_eyre::Result<()> {
                     }))
                     .await
                 {
-                    if !containers.is_empty() {
+                    if containers.is_empty() {
+                        println!("No containers found matching filters");
+                    } else {
                         println!("Container found and running");
                         container_running = true;
                         break;
-                    } else {
-                        println!("No containers found matching filters");
                     }
                 } else {
                     println!("Error listing containers");
@@ -118,7 +118,7 @@ async fn test_dockerfile_deployment() -> color_eyre::Result<()> {
             if !container_running {
                 println!("Container not found with filters. Checking container inspect...");
                 if let Ok(inspect) = builder
-                    .get_client()
+                    .client()
                     .inspect_container(&container_id, None)
                     .await
                 {

@@ -2,12 +2,13 @@ mod common;
 
 use color_eyre::Result;
 use common::{is_docker_running, with_docker_cleanup};
-use docktopus::config::{parse_memory_string, SystemRequirements};
+use docktopus::config::{SystemRequirements, parse_memory_string};
 use docktopus::{ComposeConfig, DockerBuilder, Service};
 use std::collections::HashMap;
 use std::time::Duration;
 
 #[tokio::test]
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 async fn test_resource_limits() -> Result<()> {
     with_docker_cleanup(|test_id| {
         Box::pin(async move {
@@ -74,7 +75,7 @@ async fn test_resource_limits() -> Result<()> {
 
             // Verify container configuration
             let inspect = builder
-                .get_client()
+                .client()
                 .inspect_container(container_id, None)
                 .await?;
 
@@ -82,15 +83,15 @@ async fn test_resource_limits() -> Result<()> {
                 // Verify memory limits
                 assert_eq!(
                     host_config.memory,
-                    Some(parse_memory_string("512M").unwrap())
+                    Some(parse_memory_string("512M").unwrap() as i64)
                 );
                 assert_eq!(
                     host_config.memory_swap,
-                    Some(parse_memory_string("1G").unwrap())
+                    Some(parse_memory_string("1G").unwrap() as i64)
                 );
                 assert_eq!(
                     host_config.memory_reservation,
-                    Some(parse_memory_string("256M").unwrap())
+                    Some(parse_memory_string("256M").unwrap() as i64)
                 );
 
                 // Verify CPU limits

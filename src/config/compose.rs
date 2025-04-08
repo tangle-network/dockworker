@@ -1,5 +1,5 @@
-use super::volume::Volume;
 use super::EnvironmentVars;
+use super::volume::Volume;
 use crate::config::health::HealthCheck;
 use crate::config::requirements::SystemRequirements;
 use crate::error::DockerError;
@@ -87,6 +87,10 @@ impl Default for ComposeConfig {
 
 impl ComposeConfig {
     /// Validates that required environment variables are present
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if any required environment variable is missing///
     pub fn validate_required_env_vars(&self, vars: &[&str]) -> Result<(), DockerError> {
         for (service_name, service) in &self.services {
             if let Some(env) = &service.environment {
@@ -109,6 +113,10 @@ impl ComposeConfig {
     }
 
     /// Validates that required volumes are present
+    ///
+    /// # Errors
+    ///
+    /// Will return an error if any required volume is missing
     pub fn validate_required_volumes(&self, required: &[&str]) -> Result<(), DockerError> {
         for (service_name, service) in &self.services {
             if let Some(volumes) = &service.volumes {
@@ -126,6 +134,10 @@ impl ComposeConfig {
     }
 
     /// Resolves the order in which services should be deployed based on dependencies
+    ///
+    /// # Errors
+    ///
+    /// Will return an error in the presence of circular dependencies
     pub fn resolve_service_order(&self) -> Result<Vec<String>, DockerError> {
         let mut result = Vec::new();
         let mut visited = HashSet::new();
@@ -137,7 +149,7 @@ impl ComposeConfig {
             let deps = service
                 .depends_on
                 .as_ref()
-                .map(|deps| deps.iter().map(|s| s.as_str()).collect())
+                .map(|deps| deps.iter().map(String::as_str).collect())
                 .unwrap_or_default();
             graph.insert(service_name, deps);
         }
@@ -271,11 +283,7 @@ impl ComposeConfig {
 
         for cap in re.captures_iter(value) {
             let full_match = cap.get(0).unwrap();
-            let var_name = cap
-                .get(1)
-                .or_else(|| cap.get(2))
-                .map(|m| m.as_str())
-                .unwrap_or("");
+            let var_name = cap.get(1).or_else(|| cap.get(2)).map_or("", |m| m.as_str());
 
             let (name, default) = if let Some((n, d)) = var_name.split_once(":-") {
                 (n, Some(d))
@@ -287,7 +295,7 @@ impl ComposeConfig {
                 .get(name)
                 .cloned()
                 .or_else(|| std::env::var(name).ok())
-                .or_else(|| default.map(|d| d.to_string()))
+                .or_else(|| default.map(ToString::to_string))
                 .unwrap_or_default();
 
             result = result.replace(full_match.as_str(), &replacement);

@@ -1,7 +1,7 @@
 #![allow(clippy::literal_string_with_formatting_args)]
 
-use crate::parser::env;
 use crate::parser::ComposeParser;
+use crate::parser::env;
 use crate::test_fixtures::{get_local_reth_compose, get_reth_archive_compose};
 use crate::{ComposeConfig, Service, Volume};
 use std::collections::HashMap;
@@ -349,7 +349,7 @@ services:
     env_vars.insert("VERSION".to_string(), "1.21".to_string());
     env_vars.insert("DEBUG".to_string(), "true".to_string());
 
-    let processed = env::substitute_env_vars(content, &env_vars).unwrap();
+    let processed = env::substitute_env_vars(content, &env_vars);
     let mut config = ComposeParser::new()
         .parse(&mut processed.as_bytes())
         .unwrap();

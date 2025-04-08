@@ -10,6 +10,12 @@ pub struct DockerBuilder {
 }
 
 impl DockerBuilder {
+    /// Create a new `DockerBuilder`
+    ///
+    /// # Errors
+    ///
+    /// This will attempt to connect to and ping the docker server. If either fails, this will return
+    /// an error.
     pub async fn new() -> Result<Self, bollard::errors::Error> {
         let client = Docker::connect_with_local_defaults()?;
         if let Err(e) = client.ping().await {
@@ -20,7 +26,8 @@ impl DockerBuilder {
         Ok(Self { client })
     }
 
-    pub fn get_client(&self) -> &Docker {
+    #[must_use]
+    pub fn client(&self) -> &Docker {
         &self.client
     }
 }

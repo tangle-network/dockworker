@@ -54,10 +54,12 @@ impl<'de> Deserialize<'de> for EnvironmentVars {
 }
 
 impl EnvironmentVars {
+    #[must_use]
     pub fn contains_key(&self, key: &str) -> bool {
         self.0.contains_key(key)
     }
 
+    #[must_use]
     pub fn get(&self, key: &str) -> Option<&String> {
         self.0.get(key)
     }

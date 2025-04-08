@@ -57,24 +57,32 @@ pub(crate) mod duration_serde {
         duration.as_nanos().serialize(serializer)
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
     where
         D: Deserializer<'de>,
     {
         let nanos = u128::deserialize(deserializer)?;
-        Ok(Duration::from_nanos(nanos as u64))
+        let secs = nanos / 1_000_000_000;
+        let nanos = (nanos % 1_000_000_000) as u32;
+        Ok(Duration::new(secs as u64, nanos))
     }
 }
 
 #[cfg(feature = "deploy")]
 impl HealthCheck {
+    /// Perform the health check
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if, after the specified number of retries, the health check continues to fail.
     pub async fn check(&self) -> Result<(), HealthCheckError> {
         let client = Client::new();
         let mut attempts = 0;
 
         while attempts < self.retries {
             match self.perform_check(&client).await {
-                Ok(_) => return Ok(()),
+                Ok(()) => return Ok(()),
                 Err(e) => {
                     attempts += 1;
                     if attempts == self.retries {

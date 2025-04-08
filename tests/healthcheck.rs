@@ -36,7 +36,7 @@ async fn test_healthcheck() -> Result<()> {
 
             // Pull nginx image first
             builder
-                .get_client()
+                .client()
                 .create_image(
                     Some(bollard::image::CreateImageOptions {
                         from_image: "nginx",
@@ -88,7 +88,7 @@ async fn test_healthcheck() -> Result<()> {
 
             // Verify healthcheck configuration
             let inspect = builder
-                .get_client()
+                .client()
                 .inspect_container(container_id, None)
                 .await?;
 

@@ -1,6 +1,6 @@
+use crate::DockerError;
 use crate::config::docker_file::{DockerCommand, DockerfileConfig};
 use crate::test_fixtures::get_tangle_dockerfile;
-use crate::DockerError;
 use std::collections::HashMap;
 
 #[tokio::test]
@@ -86,13 +86,13 @@ async fn test_dockerfile_content_generation() {
     };
 
     let content = config.to_string();
-    let expected = r#"FROM rust:1.70
+    let expected = r"FROM rust:1.70
 RUN cargo build
 COPY ./target /app
 ENV RUST_LOG=debug
 WORKDIR /app
 EXPOSE 8080
-"#;
+";
 
     assert_eq!(content, expected);
 }

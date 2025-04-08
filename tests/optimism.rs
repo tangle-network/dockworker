@@ -19,6 +19,7 @@ pub struct OptimismTestContext {
     pub test_dir: PathBuf,
 }
 
+#[allow(clippy::missing_errors_doc, clippy::missing_panics_doc, missing_docs)]
 impl OptimismTestContext {
     pub async fn new(test_id: &str) -> Result<Self> {
         let builder = DockerBuilder::new().await?;
@@ -44,13 +45,13 @@ impl OptimismTestContext {
             service.labels = Some(labels);
 
             // Add platform for specific services that need it
-            match service.image.as_deref() {
-                Some("ethereumoptimism/replica-healthcheck:latest")
-                | Some("ethereumoptimism/l2geth:latest")
-                | Some("us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:v1.101411.4") => {
-                    service.platform = Some("linux/amd64".to_string());
-                }
-                _ => {}
+            if let Some(
+                "ethereumoptimism/replica-healthcheck:latest"
+                | "ethereumoptimism/l2geth:latest"
+                | "us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:v1.101411.4",
+            ) = service.image.as_deref()
+            {
+                service.platform = Some("linux/amd64".to_string());
             }
         }
 
@@ -263,7 +264,7 @@ async fn test_optimism_node_deployment() -> Result<()> {
                 while retries > 0 {
                     if let Ok(containers) = ctx
                         .builder
-                        .get_client()
+                        .client()
                         .list_containers(Some(bollard::container::ListContainersOptions {
                             all: true,
                             filters: {

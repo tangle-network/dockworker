@@ -1,9 +1,8 @@
-use crate::DockerError;
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-/// Parses an environment file into a HashMap of key-value pairs
+/// Parses an environment file into a [`HashMap`] of key-value pairs
 ///
 /// # Format
 ///
@@ -16,7 +15,7 @@ use std::sync::LazyLock;
 /// Variable names must:
 /// - Start with a letter or underscore
 /// - Contain only alphanumeric characters and underscores
-pub fn parse_env_file(content: &str) -> Result<HashMap<String, String>, DockerError> {
+pub fn parse_env_file(content: &str) -> HashMap<String, String> {
     let mut vars = HashMap::new();
     let valid_key = Regex::new(r"^[a-zA-Z_][a-zA-Z0-9_]*$").unwrap();
 
@@ -34,7 +33,7 @@ pub fn parse_env_file(content: &str) -> Result<HashMap<String, String>, DockerEr
         }
     }
 
-    Ok(vars)
+    vars
 }
 
 /// Substitutes environment variables in a string
@@ -43,10 +42,7 @@ pub fn parse_env_file(content: &str) -> Result<HashMap<String, String>, DockerEr
 /// - ${VAR}
 /// - ${VAR:-default}
 /// - $VAR
-pub fn substitute_env_vars(
-    content: &str,
-    env_vars: &HashMap<String, String>,
-) -> Result<String, DockerError> {
+pub fn substitute_env_vars(content: &str, env_vars: &HashMap<String, String>) -> String {
     static VAR_DEFAULT_SYNTAX: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r"\$\{([^{}:]+):-([^{}]*)\}").unwrap());
     static VAR_CURLY_SYNTAX: LazyLock<Regex> =
@@ -58,7 +54,7 @@ pub fn substitute_env_vars(
 
     // Handle ${VAR:-default} syntax
     result = VAR_DEFAULT_SYNTAX
-        .replace_all(&result, |caps: &regex::Captures| {
+        .replace_all(&result, |caps: &regex::Captures<'_>| {
             let var_name = caps.get(1).unwrap().as_str();
             let default_value = caps.get(2).unwrap().as_str();
             match env_vars.get(var_name) {
@@ -71,29 +67,27 @@ pub fn substitute_env_vars(
 
     // Handle ${VAR} syntax
     result = VAR_CURLY_SYNTAX
-        .replace_all(&result, |caps: &regex::Captures| {
+        .replace_all(&result, |caps: &regex::Captures<'_>| {
             let var_name = caps.get(1).unwrap().as_str();
             env_vars
                 .get(var_name)
-                .map(|v| v.as_str())
-                .unwrap_or("")
+                .map_or("", String::as_str)
                 .to_string()
         })
         .to_string();
 
     // Handle $VAR syntax
     result = VAR_SYNTAX
-        .replace_all(&result, |caps: &regex::Captures| {
+        .replace_all(&result, |caps: &regex::Captures<'_>| {
             let var_name = caps.get(1).unwrap().as_str();
             env_vars
                 .get(var_name)
-                .map(|v| v.as_str())
-                .unwrap_or("")
+                .map_or("", String::as_str)
                 .to_string()
         })
         .to_string();
 
-    Ok(result)
+    result
 }
 
 #[cfg(test)]
@@ -110,7 +104,7 @@ mod tests {
         env_vars.insert("IMAGE_TAG__L2GETH".to_string(), "v1.0.0".to_string());
         env_vars.insert("SIMPLE_VAR".to_string(), "value".to_string());
 
-        let content = r#"
+        let content = r"
         services:
           l2geth:
             image: ethereumoptimism/l2geth:${IMAGE_TAG__L2GETH:-latest}
@@ -118,9 +112,9 @@ mod tests {
             image: something:${UNDEFINED_VAR:-default}
           simple:
             value: $SIMPLE_VAR
-        "#;
+        ";
 
-        let result = substitute_env_vars(content, &env_vars).unwrap();
+        let result = substitute_env_vars(content, &env_vars);
 
         assert!(result.contains("ethereumoptimism/l2geth:v1.0.0"));
         assert!(result.contains("something:default"));
@@ -143,7 +137,7 @@ mod tests {
               - SIMPLE=$HOST:$PORT
         "#;
 
-        let result = substitute_env_vars(content, &env_vars).unwrap();
+        let result = substitute_env_vars(content, &env_vars);
 
         assert!(result.contains("8545:8545"));
         assert!(result.contains("http://localhost:8545"));
@@ -163,7 +157,7 @@ mod tests {
         let temp_file = NamedTempFile::new().unwrap();
         fs::write(&temp_file, env_content).unwrap();
 
-        let vars = parse_env_file(env_content).unwrap();
+        let vars = parse_env_file(env_content);
 
         assert_eq!(vars.get("EMPTY").unwrap(), "");
         assert_eq!(vars.get("QUOTED").unwrap(), "quoted value");
@@ -177,7 +171,7 @@ mod tests {
         env_vars.insert("VERSION".to_string(), "1.0".to_string());
         env_vars.insert("MEMORY".to_string(), "1G".to_string());
 
-        let content = r#"
+        let content = r"
         services:
           app:
             image: myapp:${VERSION:-latest}
@@ -189,9 +183,9 @@ mod tests {
             environment:
               - CONFIG=${CONFIG_PATH:-/etc/config}
               - COMBINED=${VERSION:-0.0.1}-${MEMORY:-256M}
-        "#;
+        ";
 
-        let result = substitute_env_vars(content, &env_vars).unwrap();
+        let result = substitute_env_vars(content, &env_vars);
 
         assert!(result.contains("myapp:1.0"));
         assert!(result.contains("memory: 1G"));
@@ -202,14 +196,14 @@ mod tests {
 
     #[test]
     fn test_invalid_env_file() {
-        let env_content = r#"
+        let env_content = r"
         VALID_KEY=value
         INVALID+KEY=value
         123INVALID=value
         _VALID=value
         ALSO-INVALID=value
-        "#;
-        let vars = parse_env_file(env_content).unwrap();
+        ";
+        let vars = parse_env_file(env_content);
 
         assert!(vars.contains_key("VALID_KEY"));
         assert!(vars.contains_key("_VALID"));
@@ -222,9 +216,9 @@ mod tests {
     #[test]
     fn test_empty_and_missing_variables() {
         let mut env_vars = HashMap::new();
-        env_vars.insert("EMPTY".to_string(), "".to_string());
+        env_vars.insert("EMPTY".to_string(), String::new());
 
-        let content = r#"
+        let content = r"
         services:
           app:
             image: test:${EMPTY:-default}
@@ -232,9 +226,9 @@ mod tests {
             environment:
               - UNSET=${UNDEFINED:-}
               - WITH_DEFAULT=${UNDEFINED:-default_value}
-        "#;
+        ";
 
-        let result = substitute_env_vars(content, &env_vars).unwrap();
+        let result = substitute_env_vars(content, &env_vars);
 
         assert!(
             result.contains("test:default"),
@@ -254,12 +248,12 @@ mod tests {
     #[test]
     fn test_empty_default_values() {
         let env_vars = HashMap::new();
-        let content = r#"
+        let content = r"
         TEST1=${VAR:-}
         TEST2=${OTHER_VAR:-default}
-        "#;
+        ";
 
-        let result = substitute_env_vars(content, &env_vars).unwrap();
+        let result = substitute_env_vars(content, &env_vars);
         assert!(result.contains("TEST1="));
         assert!(result.contains("TEST2=default"));
     }
