@@ -32,10 +32,10 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::config::docker_file::{DockerCommand, DockerfileConfig};
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::config::docker_file::{DockerCommand, DockerfileConfig};
+    /// use docktopus::DockerBuilder;
     ///
-    /// # async fn example() -> Result<(), dockworker::DockerError> {
+    /// # async fn example() -> Result<(), docktopus::DockerError> {
     /// let builder = DockerBuilder::new().await?;
     /// let config = DockerfileConfig {
     ///     // Your Dockerfile config

@@ -13,11 +13,11 @@ pub mod parser;
 #[cfg(test)]
 mod test_fixtures;
 
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 pub mod builder;
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 pub use builder::DockerBuilder;
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 pub mod container;
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 pub use bollard;

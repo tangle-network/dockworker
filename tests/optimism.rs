@@ -2,8 +2,8 @@ mod common;
 
 use color_eyre::Result;
 use common::with_docker_cleanup;
-use dockworker::parser::ComposeParser;
-use dockworker::{ComposeConfig, DockerBuilder, DockerError};
+use docktopus::parser::ComposeParser;
+use docktopus::{ComposeConfig, DockerBuilder, DockerError};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

@@ -21,7 +21,7 @@ impl DockerfileConfig {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use dockworker::config::DockerfileConfig;
+    /// use docktopus::config::DockerfileConfig;
     ///
     /// let content = r#"
     /// FROM ubuntu:latest
@@ -49,7 +49,7 @@ impl DockerfileConfig {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::config::DockerfileConfig;
+    /// use docktopus::config::DockerfileConfig;
     ///
     /// let config = DockerfileConfig::parse_from_path("Dockerfile").unwrap();
     /// ```

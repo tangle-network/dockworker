@@ -1,7 +1,7 @@
 mod common;
 
 use common::with_docker_cleanup;
-use dockworker::DockerBuilder;
+use docktopus::DockerBuilder;
 use std::collections::HashMap;
 use std::time::Duration;
 use uuid::Uuid;

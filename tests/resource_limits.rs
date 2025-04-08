@@ -2,8 +2,8 @@ mod common;
 
 use color_eyre::Result;
 use common::{is_docker_running, with_docker_cleanup};
-use dockworker::config::{parse_memory_string, SystemRequirements};
-use dockworker::{ComposeConfig, DockerBuilder, Service};
+use docktopus::config::{parse_memory_string, SystemRequirements};
+use docktopus::{ComposeConfig, DockerBuilder, Service};
 use std::collections::HashMap;
 use std::time::Duration;
 

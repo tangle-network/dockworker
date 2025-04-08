@@ -2,13 +2,13 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::time::Duration;
 
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 use reqwest::Client;
 
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 use tokio::time::sleep;
 
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 #[derive(Debug, thiserror::Error)]
 pub enum HealthCheckError {
     #[error("Health check failed: {0}")]
@@ -66,7 +66,7 @@ pub(crate) mod duration_serde {
     }
 }
 
-#[cfg(feature = "docker")]
+#[cfg(feature = "deploy")]
 impl HealthCheck {
     pub async fn check(&self) -> Result<(), HealthCheckError> {
         let client = Client::new();

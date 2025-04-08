@@ -2,8 +2,8 @@ mod common;
 
 use bollard::container::ListContainersOptions;
 use common::{is_docker_running, with_docker_cleanup};
-use dockworker::config::{DockerCommand, DockerfileConfig};
-use dockworker::DockerBuilder;
+use docktopus::config::{DockerCommand, DockerfileConfig};
+use docktopus::DockerBuilder;
 use futures_util::TryStreamExt;
 use std::collections::HashMap;
 use std::time::Duration;

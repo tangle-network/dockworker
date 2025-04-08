@@ -246,14 +246,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "dockworker"
+name = "docktopus"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "bollard",
  "cfg-if",
  "color-eyre",
- "dockworker",
  "futures",
  "futures-util",
  "ipnet",

@@ -1,5 +1,5 @@
 [package]
-name = "dockworker"
+name = "docktopus"
 version = "0.1.0"
 edition = "2021"
 
@@ -29,18 +29,15 @@ futures = { version = "0.3", optional = true }
 walkdir = { version = "2", optional = true }
 tracing = { version = "0.1", optional = true }
 
-# Used in tests
-color-eyre = { version = "0.6", optional = true }
-
 [dev-dependencies]
-dockworker = { path = ".", features = ["docker", "testing"] }
+color-eyre = { version = "0.6" }
 tokio = { version = "1", features = ["full"] }
 pretty_assertions = "1"
 reqwest = "0.12"
 
 [features]
-default = []
-docker = [
+default = ["deploy"]
+deploy = [
     "async-trait",
     "bollard",
     "futures",
@@ -55,4 +52,3 @@ docker = [
     "uuid",
     "walkdir",
 ]
-testing = ["dep:color-eyre"]

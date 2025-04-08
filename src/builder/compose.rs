@@ -42,8 +42,8 @@ impl DockerBuilder {
     ///
     /// ```rust,no_run
     /// # use std::path::Path;
-    /// # use dockworker::DockerBuilder;
-    /// # use dockworker::parser::ComposeParser;
+    /// # use docktopus::DockerBuilder;
+    /// # use docktopus::parser::ComposeParser;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let compose_path = "docker-compose.yml";
     ///
@@ -89,11 +89,11 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use dockworker::parser::ComposeParser;
-    /// use dockworker::DockerBuilder;
+    /// use docktopus::parser::ComposeParser;
+    /// use docktopus::DockerBuilder;
     ///
     /// # #[tokio::main]
-    /// # async fn main() -> Result<(), dockworker::DockerError> {
+    /// # async fn main() -> Result<(), docktopus::DockerError> {
     /// let compose_file = r#"
     ///   version: "3"
     ///   services:
@@ -447,7 +447,7 @@ impl DockerBuilder {
     /// # Examples
     ///
     /// ```rust
-    /// use dockworker::{config::compose::Service, DockerBuilder};
+    /// use docktopus::{config::compose::Service, DockerBuilder};
     /// use std::collections::HashMap;
     ///
     /// # fn example() {

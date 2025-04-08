@@ -1,10 +1,13 @@
-# Dockworker
+# Docktopus
 
-A high-performance Rust library for programmatic container orchestration, offering type-safe Docker and Docker Compose operations with advanced deployment capabilities.
+A high-performance Rust library for programmatic container orchestration, offering type-safe Docker and Docker Compose
+operations with advanced deployment capabilities.
 
 ## Overview
 
-Dockworker bridges the gap between static container configurations and dynamic runtime orchestration. It provides a robust, type-safe interface for programmatically managing containers, with first-class support for both Dockerfile and Docker Compose workflows.
+Docktopus bridges the gap between static container configurations and dynamic runtime orchestration. It provides a
+robust, type-safe interface for programmatically managing containers, with first-class support for both Dockerfile and
+Docker Compose workflows.
 
 ## Key Features
 
@@ -42,13 +45,13 @@ Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 # For parsing only (no deployment features)
-dockworker = { version = "0.1.0" }
+docktopus = { version = "0.1.0" }
 
 # For full functionality including deployment (default)
-dockworker = "0.1.0"
+docktopus = "0.1.0"
 
 # Or explicitly with all features
-dockworker = { version = "0.1.0", features = ["docker"] }
+docktopus = { version = "0.1.0", features = ["docker"] }
 ```
 
 ## Usage
@@ -61,7 +64,7 @@ dockworker = { version = "0.1.0", features = ["docker"] }
 ### Parser-Only Usage
 
 ```rust
-use dockworker::{DockerfileConfig, DockerfileParser, ComposeParser};
+use docktopus::{DockerfileConfig, DockerfileParser, ComposeParser};
 
 // Parse a Dockerfile
 let dockerfile_content = std::fs::read_to_string("Dockerfile")?;
@@ -77,7 +80,7 @@ let compose_config = ComposeParser::parse(&compose_content)?;
 When the `deploy` feature is enabled:
 
 ```rust
-use dockworker::DockerBuilder;
+use docktopus::DockerBuilder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -90,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Basic Dockerfile Deployment
 
 ```rust
-use dockworker::{DockerBuilder, DockerfileConfig, DockerCommand};
+use docktopus::{DockerBuilder, DockerfileConfig, DockerCommand};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -123,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Docker Compose Deployment
 
 ```rust
-use dockworker::{DockerBuilder, ComposeConfig};
+use docktopus::{DockerBuilder, ComposeConfig};
 use std::collections::HashMap;
 
 #[tokio::main]
@@ -142,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Resource Management
 
 ```rust
-use dockworker::{Service, ResourceLimits};
+use docktopus::{Service, ResourceLimits};
 
 let service = Service {
     image: Some("nginx:latest".to_string()),
@@ -161,7 +164,7 @@ let service = Service {
 ### Health Checks
 
 ```rust
-use dockworker::{Service, config::compose::HealthCheck};
+use docktopus::{Service, config::compose::HealthCheck};
 
 let service = Service {
     image: Some("nginx:latest".to_string()),
@@ -183,7 +186,7 @@ let service = Service {
 ### Container Management
 
 ```rust
-use dockworker::DockerBuilder;
+use docktopus::DockerBuilder;
 use std::collections::HashMap;
 
 #[tokio::main]
@@ -213,7 +216,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 The library provides detailed error types for proper error handling:
 
 ```rust
-use dockworker::DockerError;
+use docktopus::DockerError;
 
 match result {
     Err(DockerError::FileError(e)) => println!("File error: {}", e),

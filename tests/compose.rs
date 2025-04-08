@@ -3,7 +3,7 @@ mod common;
 use bollard::container::ListContainersOptions;
 use color_eyre::Result;
 use common::{is_docker_running, with_docker_cleanup};
-use dockworker::{BuildConfig, ComposeConfig, DockerBuilder, Service};
+use docktopus::{BuildConfig, ComposeConfig, DockerBuilder, Service};
 use std::{collections::HashMap, time::Duration};
 
 #[tokio::test]
