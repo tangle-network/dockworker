@@ -12,6 +12,7 @@ use bollard::models::{
 use core::str::FromStr;
 use futures_util::{Stream, StreamExt};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -73,10 +74,10 @@ impl ContainerStatus {
 
 /// A [Docker](https://en.wikipedia.org/wiki/Docker_(software)) container
 #[derive(Debug)]
-pub struct Container<'a> {
+pub struct Container {
     id: Option<String>,
     image: String,
-    client: &'a Docker,
+    client: Arc<Docker>,
     options: ContainerOptions,
 }
 
@@ -87,7 +88,7 @@ struct ContainerOptions {
     binds: Option<Vec<String>>,
 }
 
-impl<'a> Container<'a> {
+impl Container {
     /// Create a new `Container`
     ///
     /// # Examples
@@ -105,7 +106,7 @@ impl<'a> Container<'a> {
     /// container.start(true).await?;
     /// # Ok(()) }
     /// ```
-    pub fn new<T>(client: &'a Docker, image: T) -> Self
+    pub fn new<T>(client: Arc<Docker>, image: T) -> Self
     where
         T: Into<String>,
     {
@@ -140,12 +141,12 @@ impl<'a> Container<'a> {
     ///
     /// let id = container.id().unwrap();
     ///
-    /// let container2 = Container::from_id(&connection, id).await?;
+    /// let container2 = Container::from_id(connection.client(), id).await?;
     ///
     /// assert_eq!(container.id(), container2.id());
     /// # Ok(()) }
     /// ```
-    pub async fn from_id<T>(client: &'a Docker, id: T) -> Result<Self, Error>
+    pub async fn from_id<T>(client: Arc<Docker>, id: T) -> Result<Self, Error>
     where
         T: AsRef<str>,
     {
@@ -484,7 +485,7 @@ impl<'a> Container<'a> {
     /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
     ///
-    /// let mut container = Container::new(&connection, "rustlang/rust");
+    /// let mut container = Container::new(connection.client(), "rustlang/rust");
     ///
     /// // Does nothing, the container isn't started
     /// container.stop().await?;
@@ -586,7 +587,7 @@ impl<'a> Container<'a> {
             return Ok(());
         };
 
-        wait_for_container(self.client, id).await?;
+        wait_for_container(&self.client, id).await?;
         Ok(())
     }
 

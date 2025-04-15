@@ -1,12 +1,13 @@
 use bollard::Docker;
 use std::ops::Deref;
+use std::sync::Arc;
 
 pub mod compose;
 pub mod docker_file;
 pub mod management;
 
 pub struct DockerBuilder {
-    client: Docker,
+    client: Arc<Docker>,
 }
 
 impl DockerBuilder {
@@ -23,12 +24,14 @@ impl DockerBuilder {
             return Err(e);
         }
 
-        Ok(Self { client })
+        Ok(Self {
+            client: Arc::new(client),
+        })
     }
 
     #[must_use]
-    pub fn client(&self) -> &Docker {
-        &self.client
+    pub fn client(&self) -> Arc<Docker> {
+        self.client.clone()
     }
 }
 
