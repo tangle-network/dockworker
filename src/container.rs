@@ -86,6 +86,7 @@ struct ContainerOptions {
     env: Option<Vec<String>>,
     cmd: Option<Vec<String>>,
     binds: Option<Vec<String>>,
+    extra_hosts: Option<Vec<String>>,
 }
 
 impl Container {
@@ -150,10 +151,6 @@ impl Container {
     where
         T: AsRef<str>,
     {
-        let inspection = client
-            .inspect_container(id.as_ref(), None::<InspectContainerOptions>)
-            .await?;
-
         let ContainerInspectResponse {
             id: Some(id),
             config:
@@ -164,44 +161,42 @@ impl Container {
                     ..
                 }),
             mounts,
+            host_config,
             ..
-        } = inspection
+        } = client
+            .inspect_container(id.as_ref(), None::<InspectContainerOptions>)
+            .await?
         else {
             return Err(Error::ContainerNotFound);
         };
 
-        let mut binds = None;
-        if let Some(mounts) = mounts {
-            let mut bind_mounds = Vec::new();
-            for mount in mounts {
-                if !matches!(mount.typ, Some(MountPointTypeEnum::BIND)) {
-                    continue;
-                }
+        let binds = mounts.map(|mounts| {
+            mounts
+                .into_iter()
+                .filter_map(|mount| {
+                    if !matches!(mount.typ, Some(MountPointTypeEnum::BIND)) {
+                        return None;
+                    }
+                    let source = mount.source?;
+                    let dest = mount.destination?;
+                    let mut bind = format!("{}:{}", source, dest);
+                    if let Some(mode) = mount.mode {
+                        bind.push(':');
+                        bind.push_str(&mode);
+                    }
+                    Some(bind)
+                })
+                .collect::<Vec<_>>()
+        });
 
-                let mut bind = String::new();
-                if let Some(source) = mount.source {
-                    bind.push_str(&source);
-                }
+        let extra_hosts = host_config.and_then(|hc| hc.extra_hosts);
 
-                let Some(dest) = mount.destination else {
-                    continue;
-                };
-
-                bind.push(':');
-                bind.push_str(&dest);
-
-                if let Some(mode) = mount.mode {
-                    bind.push(':');
-                    bind.push_str(&mode);
-                }
-
-                bind_mounds.push(bind);
-            }
-
-            binds = Some(bind_mounds);
-        }
-
-        let options = ContainerOptions { env, cmd, binds };
+        let options = ContainerOptions {
+            env,
+            cmd,
+            binds,
+            extra_hosts,
+        };
 
         Ok(Self {
             id: Some(id),
@@ -293,6 +288,33 @@ impl Container {
         self
     }
 
+    /// Add entries to the container’s `/etc/hosts` (equivalent to `--add-host`)
+    ///
+    /// Each item should be `"hostname:IP"` (e.g. `"host.docker.internal:host-gateway"`).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use docktopus::DockerBuilder;
+    /// use docktopus::container::Container;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.client(), "rustlang/rust");
+    ///
+    /// // Bind `host.docker.internal` (in the container) to the host gateway
+    /// container.extra_hosts(["host.docker.internal:host-gateway"]);
+    ///
+    /// // We can now start our container
+    /// container.start(true).await?;
+    /// # Ok(()) }
+    /// ```
+    pub fn extra_hosts(&mut self, hosts: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
+        self.options.extra_hosts = Some(hosts.into_iter().map(Into::into).collect());
+        self
+    }
+
     /// Get the container ID if it has been created
     ///
     /// This will only have a value if [`Container::create`] or [`Container::start`] has been
@@ -345,6 +367,7 @@ impl Container {
             attach_stdout: Some(true),
             host_config: Some(HostConfig {
                 binds: self.options.binds.clone(),
+                extra_hosts: self.options.extra_hosts.clone(),
                 ..Default::default()
             }),
             ..Default::default()
