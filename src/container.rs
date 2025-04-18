@@ -234,15 +234,15 @@ impl Container {
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
-    /// let mut container = Container::new(connection.client(), "rustlang/rust");
-    ///
-    /// container.env(["FOO=BAR", "BAZ=QUX"]);
+    /// let mut container =
+    ///     Container::new(connection.client(), "rustlang/rust").env(["FOO=BAR", "BAZ=QUX"]);
     ///
     /// // We can now start our container, and the "FOO" and "BAZ" env vars will be set
     /// container.start(true).await?;
     /// # Ok(()) }
     /// ```
-    pub fn env(&mut self, env: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
+    #[must_use]
+    pub fn env(mut self, env: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.options.env = Some(env.into_iter().map(Into::into).collect());
         self
     }
@@ -262,15 +262,15 @@ impl Container {
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
-    /// let mut container = Container::new(connection.client(), "rustlang/rust");
-    ///
-    /// container.cmd(["echo", "Hello!"]);
+    /// let mut container =
+    ///     Container::new(connection.client(), "rustlang/rust").cmd(["echo", "Hello!"]);
     ///
     /// // We can now start our container, and the command "echo Hello!" will run
     /// container.start(true).await?;
     /// # Ok(()) }
     /// ```
-    pub fn cmd(&mut self, cmd: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
+    #[must_use]
+    pub fn cmd(mut self, cmd: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.options.cmd = Some(cmd.into_iter().map(Into::into).collect());
         self
     }
@@ -289,16 +289,16 @@ impl Container {
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
-    /// let mut container = Container::new(connection.client(), "rustlang/rust");
-    ///
-    /// // Mount './my-host-dir' at '/some/container/dir' and make it read-only
-    /// container.binds(["./my-host-dir:/some/container/dir:ro"]);
+    /// let mut container = Container::new(connection.client(), "rustlang/rust")
+    ///     // Mount './my-host-dir' at '/some/container/dir' and make it read-only
+    ///     .binds(["./my-host-dir:/some/container/dir:ro"]);
     ///
     /// // We can now start our container
     /// container.start(true).await?;
     /// # Ok(()) }
     /// ```
-    pub fn binds(&mut self, binds: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
+    #[must_use]
+    pub fn binds(mut self, binds: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.options.binds = Some(binds.into_iter().map(Into::into).collect());
         self
     }
@@ -316,16 +316,16 @@ impl Container {
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
-    /// let mut container = Container::new(connection.client(), "rustlang/rust");
-    ///
-    /// // Bind `host.docker.internal` (in the container) to the host gateway
-    /// container.extra_hosts(["host.docker.internal:host-gateway"]);
+    /// let mut container = Container::new(connection.client(), "rustlang/rust")
+    ///     // Bind `host.docker.internal` (in the container) to the host gateway
+    ///     .extra_hosts(["host.docker.internal:host-gateway"]);
     ///
     /// // We can now start our container
     /// container.start(true).await?;
     /// # Ok(()) }
     /// ```
-    pub fn extra_hosts(&mut self, hosts: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
+    #[must_use]
+    pub fn extra_hosts(mut self, hosts: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.options.extra_hosts = Some(hosts.into_iter().map(Into::into).collect());
         self
     }
@@ -361,6 +361,7 @@ impl Container {
     /// container.start(true).await?;
     /// # Ok(()) }
     /// ```
+    #[must_use]
     pub fn port_bindings(mut self, port_bindings: PortMap) -> Self {
         self.options.port_bindings = Some(port_bindings);
         self
@@ -386,6 +387,7 @@ impl Container {
     /// container.start(true).await?;
     /// # Ok(()) }
     /// ```
+    #[must_use]
     pub fn runtime(mut self, runtime: impl Into<String>) -> Self {
         self.options.runtime = Some(runtime.into());
         self
@@ -415,6 +417,7 @@ impl Container {
     /// container.start(true).await?;
     /// # Ok(()) }
     /// ```
+    #[must_use]
     pub fn restart_policy(mut self, restart_policy: RestartPolicy) -> Self {
         self.options.restart_policy = Some(restart_policy);
         self
@@ -448,11 +451,10 @@ impl Container {
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
-    /// let mut container = Container::new(connection.client(), "rustlang/rust");
-    ///
-    /// container.env(["FOO=BAR", "BAZ=QUX"]);
-    /// container.cmd(["echo", "Hello!"]);
-    /// container.binds(["./host-data:/container-data"]);
+    /// let mut container = Container::new(connection.client(), "rustlang/rust")
+    ///     .env(["FOO=BAR", "BAZ=QUX"])
+    ///     .cmd(["echo", "Hello!"])
+    ///     .binds(["./host-data:/container-data"]);
     ///
     /// // The container is created using the above settings
     /// container.create().await?;
@@ -508,9 +510,8 @@ impl Container {
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
-    /// let mut container = Container::new(connection.client(), "rustlang/rust");
-    ///
-    /// container.cmd(["echo", "Hello!"]);
+    /// let mut container =
+    ///     Container::new(connection.client(), "rustlang/rust").cmd(["echo", "Hello!"]);
     ///
     /// // We can now start our container, and the command "echo Hello!" will run.
     /// let wait_for_exit = true;
@@ -560,9 +561,8 @@ impl Container {
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), docktopus::container::Error> {
     /// let connection = DockerBuilder::new().await?;
-    /// let mut container = Container::new(connection.client(), "rustlang/rust");
-    ///
-    /// container.cmd(["echo", "Hello!"]);
+    /// let mut container =
+    ///     Container::new(connection.client(), "rustlang/rust").cmd(["echo", "Hello!"]);
     ///
     /// let wait_for_exit = false;
     /// container.start(wait_for_exit).await?;
