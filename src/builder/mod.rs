@@ -1,4 +1,4 @@
-use bollard::Docker;
+use bollard::{API_DEFAULT_VERSION, Docker};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -19,6 +19,18 @@ impl DockerBuilder {
     /// an error.
     pub async fn new() -> Result<Self, bollard::errors::Error> {
         let client = Docker::connect_with_local_defaults()?;
+        if let Err(e) = client.ping().await {
+            log::error!("Failed to ping docker server: {}", e);
+            return Err(e);
+        }
+
+        Ok(Self {
+            client: Arc::new(client),
+        })
+    }
+
+    pub async fn with_address(addr: &str) -> Result<Self, bollard::errors::Error> {
+        let client = Docker::connect_with_local(addr, 20, API_DEFAULT_VERSION)?;
         if let Err(e) = client.ping().await {
             log::error!("Failed to ping docker server: {}", e);
             return Err(e);
