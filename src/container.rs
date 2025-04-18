@@ -7,7 +7,7 @@ use bollard::container::{
 };
 use bollard::models::{
     ContainerConfig, ContainerCreateResponse, ContainerInspectResponse, HostConfig,
-    MountPointTypeEnum,
+    MountPointTypeEnum, PortMap, RestartPolicy,
 };
 use core::str::FromStr;
 use futures_util::{Stream, StreamExt};
@@ -87,6 +87,9 @@ struct ContainerOptions {
     cmd: Option<Vec<String>>,
     binds: Option<Vec<String>>,
     extra_hosts: Option<Vec<String>>,
+    runtime: Option<String>,
+    port_bindings: Option<PortMap>,
+    restart_policy: Option<RestartPolicy>,
 }
 
 impl Container {
@@ -189,13 +192,25 @@ impl Container {
                 .collect::<Vec<_>>()
         });
 
-        let extra_hosts = host_config.and_then(|hc| hc.extra_hosts);
+        let mut extra_hosts = None;
+        let mut runtime = None;
+        let mut restart_policy = None;
+        let mut port_bindings = None;
+        if let Some(hc) = host_config {
+            extra_hosts = hc.extra_hosts;
+            runtime = hc.runtime;
+            restart_policy = hc.restart_policy;
+            port_bindings = hc.port_bindings;
+        }
 
         let options = ContainerOptions {
             env,
             cmd,
             binds,
             extra_hosts,
+            runtime,
+            port_bindings,
+            restart_policy,
         };
 
         Ok(Self {
@@ -315,6 +330,96 @@ impl Container {
         self
     }
 
+    /// Add a mapping of container ports to host ports
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use docktopus::bollard::models::{PortBinding, PortMap};
+    /// use docktopus::{Container, Runtime};
+    /// use std::collections::HashMap;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
+    /// // Bind port 80 on the host to port 8080 in the container
+    /// let mut bindings = HashMap::new();
+    /// bindings.insert(
+    ///     String::from("8080/tcp"),
+    ///     Some(vec![PortBinding {
+    ///         host_ip: Some("127.0.0.1".into()),
+    ///         host_port: Some("80".into()),
+    ///     }]),
+    /// );
+    ///
+    /// let runtime = Runtime::detect().await.expect("No runtime found")?;
+    /// let mut container = Container::builder()
+    ///     .image("rustlang/rust")
+    ///     .port_bindings(bindings)
+    ///     .build(runtime);
+    ///
+    /// // We can now start our container
+    /// container.start(true).await?;
+    /// # Ok(()) }
+    /// ```
+    pub fn port_bindings(mut self, port_bindings: PortMap) -> Self {
+        self.options.port_bindings = Some(port_bindings);
+        self
+    }
+
+    /// Set the runtime to use for this container (equivalent to `--runtime`)
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use docktopus::{Container, Runtime};
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
+    /// let runtime = Runtime::detect().await.expect("No runtime found")?;
+    /// let mut container = Container::builder()
+    ///     .image("rustlang/rust")
+    ///     // Use the Sysbox runtime
+    ///     .runtime("sysbox-runc")
+    ///     .build(runtime);
+    ///
+    /// // We can now start our container
+    /// container.start(true).await?;
+    /// # Ok(()) }
+    /// ```
+    pub fn runtime(mut self, runtime: impl Into<String>) -> Self {
+        self.options.runtime = Some(runtime.into());
+        self
+    }
+
+    /// Set the container's restart policy (equivalent to `--restart`)
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use docktopus::bollard::models::{RestartPolicy, RestartPolicyNameEnum};
+    /// use docktopus::{Container, Runtime};
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
+    /// let runtime = Runtime::detect().await.expect("No runtime found")?;
+    /// let mut container = Container::builder()
+    ///     .image("rustlang/rust")
+    ///     // Always restart the container, unless stopped manually
+    ///     .restart_policy(RestartPolicy {
+    ///         name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+    ///         ..Default::default()
+    ///     })
+    ///     .build(runtime);
+    ///
+    /// // We can now start our container
+    /// container.start(true).await?;
+    /// # Ok(()) }
+    /// ```
+    pub fn restart_policy(mut self, restart_policy: RestartPolicy) -> Self {
+        self.options.restart_policy = Some(restart_policy);
+        self
+    }
+
     /// Get the container ID if it has been created
     ///
     /// This will only have a value if [`Container::create`] or [`Container::start`] has been
@@ -356,7 +461,7 @@ impl Container {
     /// container.start(true).await?;
     /// # Ok(()) }
     /// ```
-    #[tracing::instrument]
+    #[tracing::instrument(skip_all)]
     pub async fn create(&mut self) -> Result<(), bollard::errors::Error> {
         log::debug!("Creating container");
 
@@ -368,6 +473,9 @@ impl Container {
             host_config: Some(HostConfig {
                 binds: self.options.binds.clone(),
                 extra_hosts: self.options.extra_hosts.clone(),
+                port_bindings: self.options.port_bindings.clone(),
+                restart_policy: self.options.restart_policy.clone(),
+                runtime: self.options.runtime.clone(),
                 ..Default::default()
             }),
             ..Default::default()
@@ -413,7 +521,7 @@ impl Container {
     /// container.remove(None).await?;
     /// # Ok(()) }
     /// ```
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     pub async fn start(&mut self, wait_for_exit: bool) -> Result<(), bollard::errors::Error> {
         if self.id.is_none() {
             self.create().await?;
@@ -518,7 +626,7 @@ impl Container {
     /// container.stop().await?;
     /// # Ok(()) }
     /// ```
-    #[tracing::instrument]
+    #[tracing::instrument(skip_all)]
     pub async fn stop(&mut self) -> Result<(), bollard::errors::Error> {
         let Some(id) = &self.id else {
             log::warn!("Container not started");
@@ -565,7 +673,7 @@ impl Container {
     /// ```
     ///
     /// [`RemoveContainerOptions::force`]: bollard::container::RemoveContainerOptions::force
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     pub async fn remove(
         mut self,
         options: Option<bollard::container::RemoveContainerOptions>,
@@ -603,7 +711,7 @@ impl Container {
     /// container.wait().await?;
     /// # Ok(()) }
     /// ```
-    #[tracing::instrument]
+    #[tracing::instrument(skip_all)]
     pub async fn wait(&self) -> Result<(), bollard::errors::Error> {
         let Some(id) = &self.id else {
             log::warn!("Container not created");
@@ -660,7 +768,7 @@ impl Container {
     /// }
     /// # Ok(()) }
     /// ```
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     pub async fn logs(
         &self,
         logs_options: Option<bollard::container::LogsOptions<String>>,
