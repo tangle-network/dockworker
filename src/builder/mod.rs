@@ -29,6 +29,12 @@ impl DockerBuilder {
         })
     }
 
+    /// Create a new `DockerBuilder` with a custom address
+    ///
+    /// # Errors
+    ///
+    /// This will attempt to connect to and ping the docker server. If either fails, this will return
+    /// an error.
     pub async fn with_address(addr: &str) -> Result<Self, bollard::errors::Error> {
         let client = Docker::connect_with_local(addr, 20, API_DEFAULT_VERSION)?;
         if let Err(e) = client.ping().await {
