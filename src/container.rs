@@ -76,6 +76,7 @@ impl ContainerStatus {
 #[derive(Debug)]
 pub struct Container {
     id: Option<String>,
+    name: Option<String>,
     image: String,
     client: Arc<Docker>,
     options: ContainerOptions,
@@ -83,6 +84,7 @@ pub struct Container {
 
 #[derive(Debug, Default, Clone)]
 struct ContainerOptions {
+    name: Option<String>,
     env: Option<Vec<String>>,
     cmd: Option<Vec<String>>,
     binds: Option<Vec<String>>,
@@ -116,6 +118,7 @@ impl Container {
     {
         Self {
             id: None,
+            name: None,
             image: image.into(),
             client,
             options: ContainerOptions::default(),
@@ -156,6 +159,7 @@ impl Container {
     {
         let ContainerInspectResponse {
             id: Some(id),
+            name,
             config:
                 Some(ContainerConfig {
                     env,
@@ -204,6 +208,7 @@ impl Container {
         }
 
         let options = ContainerOptions {
+            name: name.clone(),
             env,
             cmd,
             binds,
@@ -214,6 +219,7 @@ impl Container {
         };
 
         Ok(Self {
+            name,
             id: Some(id),
             image,
             client,
@@ -272,6 +278,29 @@ impl Container {
     #[must_use]
     pub fn cmd(mut self, cmd: impl IntoIterator<Item = impl Into<String>>) -> Self {
         self.options.cmd = Some(cmd.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// Sets the container's name
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use docktopus::DockerBuilder;
+    /// use docktopus::container::Container;
+    ///
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), docktopus::container::Error> {
+    /// let connection = DockerBuilder::new().await?;
+    /// let mut container = Container::new(connection.client(), "rustlang/rust").with_name("my_container");
+    ///
+    /// // We can now start our container
+    /// container.start(true).await?;
+    /// # Ok(()) }
+    /// ```
+    #[must_use]
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.options.name = Some(name.into());
         self
     }
 
@@ -432,6 +461,15 @@ impl Container {
         self.id.as_deref()
     }
 
+    /// Get the container name if it has been created
+    ///
+    /// This will only have a value if [`Container::create`] or [`Container::start`] has been
+    /// called prior.
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
     /// Attempt to create the container
     ///
     /// This will take the following into account:
@@ -439,6 +477,7 @@ impl Container {
     /// * [`Container::env`]
     /// * [`Container::cmd`]
     /// * [`Container::binds`]
+    /// * [`Container::name`]
     ///
     /// Be sure to set these before calling this!
     ///
@@ -483,10 +522,16 @@ impl Container {
             ..Default::default()
         };
 
-        let ContainerCreateResponse { id, warnings } = self
-            .client
-            .create_container(None::<CreateContainerOptions<String>>, config)
-            .await?;
+        let opts = self
+            .options
+            .name
+            .as_ref()
+            .map(|name| CreateContainerOptions {
+                name: name.clone(),
+                ..Default::default()
+            });
+        let ContainerCreateResponse { id, warnings } =
+            self.client.create_container(opts, config).await?;
         for warning in warnings {
             log::warn!("{}", warning);
         }
