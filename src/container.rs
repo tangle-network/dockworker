@@ -300,7 +300,9 @@ impl Container {
     /// ```
     #[must_use]
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
-        self.options.name = Some(name.into());
+        let name = name.into();
+        self.options.name = Some(name.clone());
+        self.name = Some(name);
         self
     }
 
