@@ -676,7 +676,7 @@ impl Container {
                     host_config.cap_drop = Some(val.clone());
                 }
                 if let Some(val) = &override_host_config.cgroupns_mode {
-                    host_config.cgroupns_mode = Some(val.clone());
+                    host_config.cgroupns_mode = Some(*val);
                 }
                 if let Some(val) = &override_host_config.dns {
                     host_config.dns = Some(val.clone());
@@ -747,7 +747,7 @@ impl Container {
                     host_config.console_size = Some(val.clone());
                 }
                 if let Some(val) = &override_host_config.isolation {
-                    host_config.isolation = Some(val.clone());
+                    host_config.isolation = Some(*val);
                 }
                 if let Some(val) = &override_host_config.masked_paths {
                     host_config.masked_paths = Some(val.clone());
